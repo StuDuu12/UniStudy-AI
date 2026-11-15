@@ -3,7 +3,7 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from shutil import copytree
+from shutil import copy2
 from tempfile import TemporaryDirectory
 from threading import Thread
 
@@ -12,6 +12,7 @@ import uvicorn
 from backend.main import app
 from backend.services.course_manager import CourseManager
 from backend.services.llm_service import AIConfig
+from backend.services.study import LESSONS
 
 
 class StudyModel(BaseHTTPRequestHandler):
@@ -50,8 +51,14 @@ def main():
     with TemporaryDirectory(prefix="unistudy-browser-") as directory:
         root = Path(directory)
         data = root / "data"
-        copytree(source / "data" / "demo_licensed", data / "demo_licensed")
-        (data / "manifest.csv").write_bytes((source / "data" / "manifest.csv").read_bytes())
+        (data / "demo_licensed").mkdir(parents=True)
+        selected_ids = {lesson.document_id for lesson in LESSONS.values()}
+        header, *records = (source / "data" / "manifest.csv").read_text(encoding="utf-8").splitlines()
+        selected = [record for record in records if record.split(",")[1] in selected_ids]
+        for record in selected:
+            relative_path = Path(record.split(",")[3])
+            copy2(source / "data" / relative_path, data / relative_path)
+        (data / "manifest.csv").write_text("\n".join([header, *selected]) + "\n", encoding="utf-8")
 
         with ThreadingHTTPServer(("127.0.0.1", 0), StudyModel) as model:
             Thread(target=model.serve_forever, daemon=True).start()
