@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { ChatResponse, Course, DocumentInfo, Message, ModelProvider } from '../types/api';
+import type { ChatResponse, Course, DocumentInfo, Message, ModelProvider, SendQuestionOptions } from '../types/api';
 import {
   ApiError,
   appendCourseDocuments,
@@ -212,7 +212,7 @@ export function useChat() {
     modelProvider?: ModelProvider,
     modelName?: string,
     apiKey?: string,
-    prepared?: ChatResponse,
+    { answerStyle, prepared }: SendQuestionOptions = {},
   ) {
     const text = question.trim();
     const current = historyRef.current;
@@ -254,6 +254,7 @@ export function useChat() {
         model_provider: modelProvider,
         model_name: modelName,
         api_key: apiKey,
+        answer_style: answerStyle,
         ...(previousQuestions.length > 0 ? { previous_questions: previousQuestions } : {}),
       }, controller.signal);
       if (controller.signal.aborted) return;

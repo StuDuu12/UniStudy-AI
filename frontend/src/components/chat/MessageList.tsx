@@ -7,6 +7,7 @@ interface MessageListProps {
   messages: Message[];
   loading?: boolean;
   onRetry: (question: string) => void;
+  onLookup: (question: string) => void;
   onOpenPdfViewer?: (docId: string, docName: string, page: number, totalPages?: number) => void;
 }
 
@@ -14,6 +15,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   messages,
   loading,
   onRetry,
+  onLookup,
   onOpenPdfViewer,
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -31,6 +33,9 @@ export const MessageList: React.FC<MessageListProps> = ({
             key={message.id}
             message={message}
             onRetry={retryQuestion ? () => onRetry(retryQuestion) : undefined}
+            onLookup={retryQuestion && message.status === 'ai_unavailable' && message.sources?.length
+              ? () => onLookup(retryQuestion)
+              : undefined}
             onOpenPdfViewer={onOpenPdfViewer}
           />
         );

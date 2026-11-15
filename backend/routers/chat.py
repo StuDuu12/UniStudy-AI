@@ -22,4 +22,5 @@ def post_chat(payload: ChatRequest, request: Request):
         model_provider=payload.model_provider,
         model_name=payload.model_name,
         api_key=payload.api_key,
+        answer_style=payload.answer_style,
     )

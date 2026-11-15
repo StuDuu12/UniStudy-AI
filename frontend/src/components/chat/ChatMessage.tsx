@@ -10,6 +10,7 @@ import { AnswerMarkdown } from '../shared/AnswerMarkdown';
 interface ChatMessageProps {
   message: Message;
   onRetry?: () => void;
+  onLookup?: () => void;
   onOpenPdfViewer?: (docId: string, docName: string, page: number, totalPages?: number) => void;
 }
 
@@ -105,6 +106,7 @@ function formatLookupAnswer(text: string): string {
 export const ChatMessage: React.FC<ChatMessageProps> = ({
   message,
   onRetry,
+  onLookup,
   onOpenPdfViewer,
 }) => {
   const [copied, setCopied] = useState(false);
@@ -209,6 +211,16 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
               onRetry={onRetry}
             />
           )}
+          {onLookup && (
+            <button
+              type="button"
+              onClick={onLookup}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              Tra cứu giáo trình cho câu này
+            </button>
+          )}
 
           {/* Answer text formatted with Markdown & LaTeX */}
           {answer && message.status === 'success' && (
@@ -247,7 +259,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
               <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
                 <div className="flex items-center gap-1.5">
                   <BookOpen className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Nguồn trích dẫn đối chiếu ({message.sources!.length})</span>
+                  <span>Nguồn PDF ({message.sources!.length})</span>
                 </div>
                 {message.sources!.length > 1 && (
                   <button

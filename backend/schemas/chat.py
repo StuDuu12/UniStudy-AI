@@ -13,6 +13,7 @@ ChatStatus = Literal[
 ]
 
 ChatMode = Literal["lookup", "ai", "auto"]
+AnswerStyle = Literal["auto", "detailed", "comparison", "example", "review"]
 Question = Annotated[str, Field(max_length=2000)]
 
 
@@ -34,6 +35,7 @@ class ChatRequest(BaseModel):
     model_provider: Literal["local", "gemini", "chatgpt"] | None = None
     model_name: str | None = None
     api_key: str | None = None
+    answer_style: AnswerStyle = "auto"
 
 
 class ChatResponse(BaseModel):
@@ -80,6 +82,9 @@ class MessageModel(BaseModel):
     timestamp: str
     created_at: int | None = None
     status: ChatStatus | None = None
+    mode: ChatMode | None = None
+    provider: Literal["local", "gemini", "chatgpt"] | None = None
+    model_name: str | None = None
     sources: list[SourceItem] | None = None
     message: str | None = None
     context_question: str | None = None
