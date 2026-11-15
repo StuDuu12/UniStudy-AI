@@ -107,6 +107,7 @@ npm run build
 1. Mở **Thêm học phần** ở thanh bên, nhập tên, chọn PDF và bấm **Tạo học phần**. Ứng dụng sẽ mở môn vừa tạo.
 2. Để bổ sung tài liệu, chọn môn cần cập nhật rồi mở **Thêm PDF vào học phần**. Chọn các PDF và bấm **Tải PDF lên**.
 3. Nhập câu hỏi trong cuộc trò chuyện. Hệ thống tìm đoạn liên quan trong tài liệu của môn đang chọn và hiển thị trang nguồn để đối chiếu.
+4. Để quản lý môn đang chọn, dùng **Đổi tên học phần** hoặc **Xóa học phần** ngay dưới **Thêm học phần**. Khi xác nhận xóa, môn được gỡ khỏi danh sách và tệp PDF vẫn được lưu trên máy.
 
 Mỗi lượt nhận tối đa 5 PDF có văn bản, mỗi tệp tối đa 20 MB. PDF scan cần được nhận dạng chữ trước. Tệp tải lên được lưu trong `data/local_course_pdfs/`.
 
@@ -174,5 +175,7 @@ Ví dụ, sau khi hỏi “Phân vùng tương đương là gì?”, bạn có t
 # Cửa sổ thứ hai, dùng một phiên trình duyệt thử nghiệm mới
 playwright-cli -s=unistudy-test open http://127.0.0.1:18173 --browser=msedge
 playwright-cli -s=unistudy-test run-code --filename=tests/browser/study.js
+# Chạy sau study.js vì bài thử này xóa một học phần trong dữ liệu tạm
+playwright-cli -s=unistudy-test run-code --filename=tests/browser/course_management.js
 playwright-cli -s=unistudy-test close
 ```

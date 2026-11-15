@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Check, FolderOpen, GraduationCap, History, MessageSquare, Pencil, PlusCircle, Trash2, X } from 'lucide-react';
 import type { Course, DocumentInfo } from '../../types/api';
+import { CourseManageActions } from '../courses/CourseManageActions';
 import { CourseSelector } from '../courses/CourseSelector';
 import { DocumentList } from '../courses/DocumentList';
 import { CourseUploadForm } from '../courses/CourseUploadForm';
@@ -21,6 +22,8 @@ interface AppSidebarProps {
   onSelectCourse: (courseId: string) => void;
   onReloadCourses: () => void;
   onAddCourse: (name: string, files: File[]) => Promise<void>;
+  onRenameCourse: (courseId: string, name: string) => Promise<void>;
+  onDeleteCourse: (courseId: string) => Promise<void>;
   onAddDocuments: (courseId: string, files: File[]) => Promise<void>;
   onNewConversation: () => void;
   onSelectConversation: (id: string) => void;
@@ -54,6 +57,8 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   onSelectCourse,
   onReloadCourses,
   onAddCourse,
+  onRenameCourse,
+  onDeleteCourse,
   onAddDocuments,
   onNewConversation,
   onSelectConversation,
@@ -63,6 +68,9 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState<string>('');
+  const [courseChangePending, setCourseChangePending] = useState(false);
+  const selectedCourse = courses.find((course) => course.course_id === selectedCourseId);
+  const courseActionsDisabled = catalogStatus !== 'online' || courseChangePending;
 
   const handleStartRename = (id: string, currentTitle: string) => {
     setEditingId(id);
@@ -134,7 +142,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3.5">
           <section aria-label="Học phần" className="space-y-2">
-            <CourseSelector courses={courses} selectedCourseId={selectedCourseId} onSelect={onSelectCourse} />
+            <CourseSelector courses={courses} selectedCourseId={selectedCourseId} onSelect={onSelectCourse} disabled={courseChangePending} />
             {catalogStatus === 'loading' && (
               <p role="status" className="text-xs text-slate-600">Đang tải học phần…</p>
             )}
@@ -146,7 +154,18 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 </button>
               </div>
             )}
-            <CourseUploadForm create disabled={catalogStatus !== 'online'} onUpload={onAddCourse} />
+            <CourseUploadForm create disabled={courseActionsDisabled} onUpload={onAddCourse} />
+            {selectedCourse && (
+              <CourseManageActions
+                key={selectedCourseId}
+                courseName={selectedCourse.course_name}
+                disabled={catalogStatus !== 'online'}
+                pending={courseChangePending}
+                onPendingChange={setCourseChangePending}
+                onRename={(name) => onRenameCourse(selectedCourseId, name)}
+                onDelete={() => onDeleteCourse(selectedCourseId)}
+              />
+            )}
           </section>
 
           {selectedCourseId && (
@@ -271,7 +290,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               </div>
               <CourseUploadForm
                 key={selectedCourseId}
-                disabled={catalogStatus !== 'online'}
+                disabled={courseActionsDisabled}
                 onUpload={(_, files) => onAddDocuments(selectedCourseId, files)}
               />
               <DocumentList

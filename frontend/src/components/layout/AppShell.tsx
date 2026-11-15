@@ -31,6 +31,8 @@ export const AppShell: React.FC<AppShellProps> = ({
   onRenameConversation,
   onSendQuestion,
   onAddCourse,
+  onRenameCourse,
+  onDeleteCourse,
   onAddDocuments,
 }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -92,6 +94,8 @@ export const AppShell: React.FC<AppShellProps> = ({
           setSidebarOpen(false);
         }}
         onAddCourse={onAddCourse}
+        onRenameCourse={onRenameCourse}
+        onDeleteCourse={onDeleteCourse}
         onAddDocuments={onAddDocuments}
         onNewConversation={() => {
           onNewConversation();
