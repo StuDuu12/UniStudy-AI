@@ -116,6 +116,9 @@ echo [*] Su dung Python: !PYTHON_EXE!
 for /f "delims=" %%V in ('"!PYTHON_EXE!" --version 2^>^&1') do echo [*] Phien ban: %%V
 echo.
 
+rem Khoi dong Ollama va nap model song song voi backend.
+start "UniStudy AI Ollama" /b "!PYTHON_EXE!" "%~dp0scripts\warm_ollama.py"
+
 rem 2. Kiem tra xem port 8000 da co tien trinh nao chay chua
 netstat -ano | findstr ":8000" | findstr "LISTENING" >nul 2>&1
 if !errorlevel! equ 0 (
