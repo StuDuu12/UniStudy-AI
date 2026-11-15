@@ -188,6 +188,8 @@ def get_provider_config(
     Returns (config, error_reason). error_reason can be 'missing_key' or None.
     """
     if not provider:
+        if model_name == "lookup":
+            return None, None
         return fallback_ai, None
 
     provider = provider.lower().strip()

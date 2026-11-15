@@ -203,11 +203,25 @@ def test_out_of_scope_query_returns_insufficient_evidence():
     assert response.sources == []
 
 
-def test_requirements_elicitation_techniques_ranks_page_29_top():
+@pytest.mark.parametrize("model_name", ["lookup", None])
+def test_requirements_elicitation_techniques_ranks_page_29_top(model_name, monkeypatch):
     root = Path(__file__).resolve().parents[2]
     course_manager = CourseManager(root)
-    response = course_manager.answer_question("thu_thap_phan_tich_yeu_cau", "Các kỹ thuật phổ biến để khám phá yêu cầu phần mềm?")
+    course_manager._ai = AIConfig("http://127.0.0.1:11434/v1/chat/completions", "test-model", "")
+
+    def unreachable(*_):
+        if model_name == "lookup":
+            pytest.fail("Explicit lookup must skip the model")
+        raise AIUnavailable("network")
+
+    monkeypatch.setattr(AIConfig, "explain", unreachable)
+    response = course_manager.answer_question(
+        "thu_thap_phan_tich_yeu_cau",
+        "Các kỹ thuật phổ biến để khám phá yêu cầu phần mềm?",
+        model_name=model_name,
+    )
     assert response.status == "success"
+    assert response.mode == "lookup"
     assert response.sources[0].page == 29
     assert response.sources[0].score == 1.0
     assert "Các kỹ thuật điều tra" in response.answer

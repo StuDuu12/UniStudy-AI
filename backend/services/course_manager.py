@@ -589,7 +589,9 @@ class CourseManager:
             except (AIUnavailable, ValueError) as error:
                 reason = error.reason if isinstance(error, AIUnavailable) else "format"
                 is_local = (model_provider == "local") or getattr(ai_config, "is_local", False)
-                if is_local and model_name != "lookup":
+                if is_local and not model_provider and not model_name and reason in {"network", "model"}:
+                    response_message = "Ollama chưa khả dụng. Câu trả lời được tạo từ phần tra cứu giáo trình."
+                elif is_local:
                     response_status = "ai_unavailable"
                     mode = "ai"
                     response_message = (
