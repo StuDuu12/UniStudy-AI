@@ -1,0 +1,13 @@
+case_id,mode,course_id,question,expected_status,actual_status,expected_sources,actual_sources,result,notes
+F01,lookup,software_testing,Người làm kiểm thử hộp đen có cần xem mã nguồn trước khi thiết kế ca không?,success,success,testing_basics:p1,testing_basics:p1,pass,Trang tham chiếu xuất hiện ở hạng 1 trong các trang trả về.
+F02,lookup,software_testing,Neu o tuoi nhan chuoi abc thi co nen tach thanh lop du lieu sai kieu khong?,success,success,testing_basics:p2,testing_basics:p2,pass,Trang tham chiếu xuất hiện ở hạng 1 trong các trang trả về.
+F03,lookup,software_testing,Nếu ô điểm chấp nhận cả 0 và 100 thì -1 và 101 phải được xử lý thế nào?,success,success,testing_basics:p3,testing_basics:p3,pass,Trang tham chiếu xuất hiện ở hạng 1 trong các trang trả về.
+F04,lookup,software_testing,Khi nào có thể gộp cột trong bảng quyết định?,success,success,testing_basics:p4,testing_basics:p4,pass,Trang tham chiếu xuất hiện ở hạng 1 trong các trang trả về.
+F05,lookup,algorithm_analysis,Tại sao Big O không cho biết thuật toán chạy bao nhiêu giây?,success,success,algorithm_basics:p1,algorithm_basics:p1,pass,Trang tham chiếu xuất hiện ở hạng 1 trong các trang trả về.
+F06,lookup,algorithm_analysis,Hai lượt duyệt cùng một mảng chạy lần lượt thì chi phí có phải O(n^2) không?,success,success,algorithm_basics:p2,algorithm_basics:p2,pass,Trang tham chiếu xuất hiện ở hạng 1 trong các trang trả về.
+F07,lookup,algorithm_analysis,Ham tinh tong de quy cho mang rong thi truong hop co so la gi?,success,success,algorithm_basics:p3,algorithm_basics:p3,pass,Trang tham chiếu xuất hiện ở hạng 1 trong các trang trả về.
+F08,lookup,algorithm_analysis,"Với 8 phần tử, mỗi mức trộn phải xử lý tổng cộng bao nhiêu phần tử?",success,success,algorithm_basics:p4,algorithm_basics:p4,pass,Trang tham chiếu xuất hiện ở hạng 1 trong các trang trả về.
+F09,lookup,software_testing,Lịch đăng ký học phần học kỳ tới bắt đầu ngày nào?,insufficient_evidence,insufficient_evidence,,,pass,Khớp trạng thái và không trả nguồn.
+F10,lookup,software_testing,Sắp xếp trộn chia dãy đầu vào thế nào?,insufficient_evidence,insufficient_evidence,,,pass,Khớp trạng thái và không trả nguồn.
+F11,lookup,algorithm_analysis,Hãy nói rõ phần này.,needs_clarification,needs_clarification,,,pass,Khớp trạng thái và không trả nguồn.
+F12,lookup,algorithm_analysis,,invalid_input,invalid_input,,,pass,Khớp trạng thái và không trả nguồn.

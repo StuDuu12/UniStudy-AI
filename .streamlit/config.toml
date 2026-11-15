@@ -1,0 +1,30 @@
+[theme]
+base = "light"
+primaryColor = "#2563EB"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F1F5F9"
+textColor = "#0F172A"
+borderColor = "#CBD5E1"
+baseRadius = "0.75rem"
+showWidgetBorder = true
+showSidebarBorder = true
+font = "sans-serif"
+headingFontSizes = ["2rem", "1.45rem", "1.2rem"]
+
+[theme.sidebar]
+backgroundColor = "#F8FAFC"
+secondaryBackgroundColor = "#FFFFFF"
+
+[runner]
+# Complete the current chat turn before starting a widget-triggered rerun.
+fastReruns = false
+
+[client]
+showErrorDetails = "none"
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+address = "127.0.0.1"

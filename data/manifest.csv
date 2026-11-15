@@ -1,0 +1,3 @@
+course_id,document_id,document_name,path,license
+software_testing,testing_basics,software_testing.pdf,demo_licensed/software_testing.pdf,project_demo
+algorithm_analysis,algorithm_basics,algorithm_analysis.pdf,demo_licensed/algorithm_analysis.pdf,project_demo

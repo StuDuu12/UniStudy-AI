@@ -1,0 +1,56 @@
+[
+  {
+    "course_id": "tin_hoc_dai_cuong",
+    "document_id": "1kh-SdDDu-c5eerYUCU4zmFf1ohZMkzFl",
+    "filename": "Chuong 1 - Gioi thieu.pdf",
+    "title": "Chương 1 - Giới thiệu tin học đại cương",
+    "page_count": 34,
+    "permission": "local_course_material",
+    "is_shareable": true
+  },
+  {
+    "course_id": "tin_hoc_dai_cuong",
+    "document_id": "1Inq91ANhNzKIpJba61ig3j5eudazi_e2",
+    "filename": "Chuong 2 - Sử dụng máy tính cơ bản.pdf",
+    "title": "Chương 2 - Sử dụng máy tính cơ bản",
+    "page_count": 72,
+    "permission": "local_course_material",
+    "is_shareable": true
+  },
+  {
+    "course_id": "tin_hoc_dai_cuong",
+    "document_id": "1EQB6v_JkN6-v1shWvHxrNcwPjm2Q5Cs0",
+    "filename": "Chuong 3 Bai giangnew.pdf",
+    "title": "Chương 3 - Hệ điều hành và phần mềm",
+    "page_count": 68,
+    "permission": "local_course_material",
+    "is_shareable": true
+  },
+  {
+    "course_id": "tin_hoc_dai_cuong",
+    "document_id": "1UwqpPyGIE0CIikVKdf9sB-57OnhYBHMR",
+    "filename": "Chuong 4 - MS Word 2010_06.09.19.pdf",
+    "title": "Chương 4 - Xử lý văn bản với Microsoft Word",
+    "page_count": 76,
+    "permission": "local_course_material",
+    "is_shareable": true
+  },
+  {
+    "course_id": "software_testing",
+    "document_id": "testing_basics",
+    "filename": "software_testing.pdf",
+    "title": "Kiểm thử phần mềm cơ bản (Hộp đen, Phân vùng tương đương, Phân tích giá trị biên)",
+    "page_count": 4,
+    "permission": "team_authored_demo",
+    "is_shareable": true
+  },
+  {
+    "course_id": "algorithm_analysis",
+    "document_id": "algorithm_basics",
+    "filename": "algorithm_analysis.pdf",
+    "title": "Phân tích và thiết kế thuật toán cơ bản (Độ phức tạp thời gian, Ký pháp Big O, Đệ quy)",
+    "page_count": 4,
+    "permission": "team_authored_demo",
+    "is_shareable": true
+  }
+]

@@ -1,0 +1,13 @@
+course_id,question,expected_status,document_id,page_number
+software_testing,Người làm kiểm thử hộp đen có cần xem mã nguồn trước khi thiết kế ca không?,success,testing_basics,1
+software_testing,Neu o tuoi nhan chuoi abc thi co nen tach thanh lop du lieu sai kieu khong?,success,testing_basics,2
+software_testing,Nếu ô điểm chấp nhận cả 0 và 100 thì -1 và 101 phải được xử lý thế nào?,success,testing_basics,3
+software_testing,Khi nào có thể gộp cột trong bảng quyết định?,success,testing_basics,4
+algorithm_analysis,Tại sao Big O không cho biết thuật toán chạy bao nhiêu giây?,success,algorithm_basics,1
+algorithm_analysis,Hai lượt duyệt cùng một mảng chạy lần lượt thì chi phí có phải O(n^2) không?,success,algorithm_basics,2
+algorithm_analysis,Ham tinh tong de quy cho mang rong thi truong hop co so la gi?,success,algorithm_basics,3
+algorithm_analysis,"Với 8 phần tử, mỗi mức trộn phải xử lý tổng cộng bao nhiêu phần tử?",success,algorithm_basics,4
+software_testing,Lịch đăng ký học phần học kỳ tới bắt đầu ngày nào?,insufficient_evidence,,
+software_testing,Sắp xếp trộn chia dãy đầu vào thế nào?,insufficient_evidence,,
+algorithm_analysis,Hãy nói rõ phần này.,needs_clarification,,
+algorithm_analysis,,invalid_input,,

@@ -1,0 +1,21 @@
+course_id,question,expected_status,document_id,page_number
+software_testing,Kiểm thử hộp đen dựa vào đâu để chọn kết quả mong đợi?,success,testing_basics,1
+software_testing,Một ca kiểm thử hộp đen cần ghi những thông tin nào?,success,testing_basics,1
+software_testing,Phân vùng tương đương là gì?,success,testing_basics,2
+software_testing,Với ô tuổi nhận số nguyên từ 18 đến 60 thì chọn đại diện cho từng lớp tương đương thế nào?,success,testing_basics,2
+software_testing,Phân vùng tương đương khác phân tích giá trị biên ở đâu?,success,testing_basics,3
+software_testing,Nên thử những giá trị biên nào cho ô điểm nguyên từ 0 đến 100?,success,testing_basics,3
+software_testing,Mỗi cột của bảng quyết định thể hiện điều gì?,success,testing_basics,4
+algorithm_analysis,Big O là gì và biểu diễn cận trên như thế nào?,success,algorithm_basics,1
+algorithm_analysis,Bậc Big O của 4n^2 + 3n + 9 là bao nhiêu?,success,algorithm_basics,1
+algorithm_analysis,Quy tắc tuần tự khi phân tích thời gian tính là gì?,success,algorithm_basics,2
+algorithm_analysis,Vòng lặp lồng nhau có vòng trong chạy từ 1 đến n lượt thì tổng số lượt là bao nhiêu?,success,algorithm_basics,2
+algorithm_analysis,Trường hợp cơ sở có vai trò gì trong hệ thức truy hồi của đệ quy?,success,algorithm_basics,3
+algorithm_analysis,Hệ thức truy hồi khi tính tổng n phần tử bằng đệ quy có dạng nào?,success,algorithm_basics,3
+algorithm_analysis,Vì sao sắp xếp trộn có độ phức tạp O(n log n)?,success,algorithm_basics,4
+software_testing,Big O biểu diễn cận trên tiệm cận như thế nào?,insufficient_evidence,,
+algorithm_analysis,Phân vùng tương đương là gì trong kiểm thử hộp đen?,insufficient_evidence,,
+software_testing,Năm nay trường tăng học phí bao nhiêu?,insufficient_evidence,,
+algorithm_analysis,Thời tiết ở Đà Nẵng hôm nay thế nào?,insufficient_evidence,,
+software_testing,Giải thích cái này,needs_clarification,,
+algorithm_analysis,Vậy còn trường hợp kia?,needs_clarification,,
