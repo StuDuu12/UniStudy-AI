@@ -1,5 +1,5 @@
 from typing import Annotated, Literal
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field
 
 
 ChatStatus = Literal[
@@ -24,12 +24,16 @@ class SourceItem(BaseModel):
     excerpt: str
     score: float | None = None
     document_sha256: str | None = None
+    formatted_excerpt: str | None = None
 
 
 class ChatRequest(BaseModel):
     course_id: str
     question: Question = Field(min_length=1)
     previous_questions: list[Question] = Field(default_factory=list, max_length=3)
+    model_provider: Literal["local", "gemini", "chatgpt"] | None = None
+    model_name: str | None = None
+    api_key: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -39,6 +43,8 @@ class ChatResponse(BaseModel):
     sources: list[SourceItem] = Field(default_factory=list)
     message: str | None = None
     context_question: str | None = None
+    model_name: str | None = None
+    model_provider: str | None = None
 
 
 class CourseItem(BaseModel):
@@ -47,6 +53,10 @@ class CourseItem(BaseModel):
     document_count: int
     status: str = "ready"
     suggested_questions: list[str] = Field(default_factory=list)
+
+
+class RenameConversationRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
 
 
 class CourseListResponse(BaseModel):
@@ -82,12 +92,7 @@ class ConversationModel(BaseModel):
     course_id: str
     title: str
     updated_at: int
-    title_version: int = Field(default=0, ge=0)
     messages: list[MessageModel] = Field(default_factory=list)
-
-
-class RenameConversationRequest(BaseModel):
-    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
 class ConversationListResponse(BaseModel):

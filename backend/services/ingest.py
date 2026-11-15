@@ -6,6 +6,7 @@ from pathlib import Path
 import pymupdf
 
 from backend.services.evidence import normalize_text
+from backend.services.pdf_text import PdfLine, format_pdf_blocks, pdf_layout_blocks
 from services.retrieval import PDF_LOCK
 
 _CHUNK_WORDS = 135
@@ -33,22 +34,39 @@ class ChunkSource:
     score: float = 0.0
     document_sha256: str = ""
     heading: str = ""
+    formatted_excerpt: str = ""
 
 
 def extract_pdf_chunks(document: DocumentInfo, pdf_bytes: bytes, *, sort: bool = True) -> Iterator[ChunkSource]:
     with PDF_LOCK, pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
         if not pdf.is_pdf or pdf.is_repaired or pdf.needs_pass:
             raise ValueError("PDF is invalid or requires a password")
-        step = _CHUNK_WORDS - _CHUNK_OVERLAP
         for page_number, page in enumerate(pdf, start=1):
-            page_text = page.get_text(sort=sort)
-            lines = [line.strip() for line in page_text.splitlines() if line.strip()]
-            heading = lines[0][:120] if lines else ""
-            words = page_text.split()
-            for chunk_number, start in enumerate(range(0, len(words), step), start=1):
+            blocks = page.get_text("dict", sort=sort, flags=pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES)
+            lines = []
+            for block in blocks["blocks"]:
+                for line in block.get("lines", ()):
+                    spans = line["spans"]
+                    if not spans:
+                        continue
+                    parts = [spans[0]["text"]]
+                    for left, right in zip(spans, spans[1:]):
+                        if right["bbox"][0] - left["bbox"][2] > right["size"] * 0.15:
+                            parts.append(" ")
+                        parts.append(right["text"])
+                    text = "".join(parts).strip()
+                    if text:
+                        lines.append(PdfLine(text, line["bbox"][0], line["bbox"][1], spans[0]["size"]))
+            layout = pdf_layout_blocks(lines, page_number, page.rect.width, page.rect.height)
+            heading = lines[0].text[:120] if lines else ""
+            words = [word for line in lines for word in line.text.split()]
+            # Keep boundary context, while preserving one physical PDF page per chunk.
+            step = _CHUNK_WORDS - _CHUNK_OVERLAP
+            for start in range(0, len(words), step):
                 excerpt = " ".join(words[start : start + _CHUNK_WORDS])
                 if len(normalize_text(excerpt)) < 3:
                     continue
+                chunk_number = start // step + 1
                 yield ChunkSource(
                     document_id=document.document_id,
                     document_name=document.document_name,
@@ -58,6 +76,7 @@ def extract_pdf_chunks(document: DocumentInfo, pdf_bytes: bytes, *, sort: bool =
                     score=0.0,
                     document_sha256=document.sha256,
                     heading=heading,
+                    formatted_excerpt=format_pdf_blocks(layout, start, start + _CHUNK_WORDS),
                 )
                 if start + _CHUNK_WORDS >= len(words):
                     break

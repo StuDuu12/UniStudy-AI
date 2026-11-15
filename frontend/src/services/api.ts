@@ -5,6 +5,7 @@ import type {
   CourseListResponse,
   DocumentListResponse,
   Message,
+  Source,
 } from '../types/api';
 import type { Conversation } from './conversations';
 
@@ -69,6 +70,20 @@ export async function createCourse(courseName: string, files: File[]): Promise<C
   return readResponse<Course>(response, 'Không thể tạo học phần');
 }
 
+export async function renameCourse(courseId: string, courseName: string): Promise<Course> {
+  const response = await fetch(`${API_BASE}/courses/${encodeURIComponent(courseId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ course_name: courseName }),
+  });
+  return readResponse<Course>(response, 'Không thể đổi tên học phần');
+}
+
+export async function deleteCourse(courseId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/courses/${encodeURIComponent(courseId)}`, { method: 'DELETE' });
+  if (!response.ok) await readResponse(response, 'Không thể xóa học phần');
+}
+
 export async function appendCourseDocuments(courseId: string, files: File[]): Promise<DocumentListResponse> {
   const body = new FormData();
   for (const file of files) body.append('files', file);
@@ -90,6 +105,14 @@ export function getDocumentSinglePagePdfUrl(documentId: string, page: number): s
 export function getDocumentPagePreviewUrl(documentId: string, page: number, digest?: string): string {
   const url = `${API_BASE}/documents/${encodeURIComponent(documentId)}/page/${page}`;
   return digest ? `${url}?sha256=${encodeURIComponent(digest)}` : url;
+}
+
+export async function fetchFormattedExcerpt(source: Source, signal: AbortSignal): Promise<string> {
+  const params = new URLSearchParams({ chunk_id: source.chunk_id, sha256: source.document_sha256 ?? '' });
+  const path = `${API_BASE}/documents/${encodeURIComponent(source.document_id)}/page/${source.page}/excerpt`;
+  const response = await fetch(`${path}?${params}`, { signal });
+  const { markdown } = await readResponse<{ markdown: string }>(response, 'Không thể lấy đoạn trích');
+  return markdown;
 }
 
 export function getDocumentDownloadUrl(documentId: string): string {
@@ -114,32 +137,8 @@ interface ServerConversation {
   id: string;
   course_id: string;
   title: string;
-  title_version?: number;
   updated_at: number;
   messages: ServerMessage[];
-}
-
-function fromServerConversation(item: ServerConversation): Conversation {
-  return {
-    id: item.id,
-    courseId: item.course_id,
-    title: item.title,
-    titleVersion: item.title_version,
-    updatedAt: item.updated_at,
-    messages: item.messages.map((m) => ({
-      id: m.id,
-      sender: m.sender,
-      content: m.content,
-      timestamp: m.timestamp,
-      status: m.status ?? undefined,
-      sources: m.sources ?? undefined,
-      message: m.message,
-      contextQuestion: m.context_question ?? undefined,
-      retryQuestion: m.retry_question ?? undefined,
-      replyTo: m.reply_to ?? undefined,
-      createdAt: m.created_at ?? undefined,
-    })),
-  };
 }
 
 export async function fetchServerConversations(
@@ -154,7 +153,25 @@ export async function fetchServerConversations(
     if (!res.ok) return [];
     const data = await res.json() as { conversations: ServerConversation[] };
     if (!Array.isArray(data?.conversations)) return [];
-    return data.conversations.map(fromServerConversation);
+    return data.conversations.map((item) => ({
+      id: item.id,
+      courseId: item.course_id,
+      title: item.title,
+      updatedAt: item.updated_at,
+      messages: item.messages.map((m) => ({
+        id: m.id,
+        sender: m.sender,
+        content: m.content,
+        timestamp: m.timestamp,
+        status: m.status ?? undefined,
+        sources: m.sources ?? undefined,
+        message: m.message,
+        contextQuestion: m.context_question ?? undefined,
+        retryQuestion: m.retry_question ?? undefined,
+        replyTo: m.reply_to ?? undefined,
+        createdAt: m.created_at ?? undefined,
+      })),
+    }));
   } catch {
     return [];
   }
@@ -201,12 +218,19 @@ export async function deleteServerConversation(
   if (!response.ok && response.status !== 404) await readResponse(response, 'Không thể xóa hội thoại');
 }
 
-export async function renameServerConversation(conversationId: string, title: string): Promise<Conversation> {
-  const response = await fetch(`${API_BASE}/conversations/${encodeURIComponent(conversationId)}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title }),
-    signal: AbortSignal.timeout(5000),
-  });
-  return fromServerConversation(await readResponse<ServerConversation>(response, 'Không thể đổi tên hội thoại'));
+export async function renameServerConversation(
+  id: string,
+  title: string
+): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/conversations/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }

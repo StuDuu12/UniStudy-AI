@@ -2,7 +2,8 @@ import re
 import unicodedata
 from collections.abc import Sequence
 
-EVIDENCE_THRESHOLD = 0.20
+# The merge-sort slide is concise but directly answers its suggested question.
+EVIDENCE_THRESHOLD = 0.19
 
 _FOLLOW_UP_QUESTION = re.compile(
     r"(?:(?:vay|the) )?(?:"

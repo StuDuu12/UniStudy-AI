@@ -1,4 +1,4 @@
-"""Inspect the PDF evidence selected by the API without calling an AI provider."""
+"""Inspect the same PDF index used by the API, without calling an AI provider."""
 import argparse
 import json
 from dataclasses import asdict
@@ -9,21 +9,22 @@ from backend.services.evidence import EVIDENCE_THRESHOLD
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Xem các đoạn PDF và trang nguồn được tra cứu.")
-    parser.add_argument("--course", help="Mã học phần. Bỏ trống để liệt kê học phần.")
-    parser.add_argument("--question", help="Câu hỏi cần tra cứu")
-    parser.add_argument("--top-k", type=int, choices=range(1, 11), metavar="1..10")
+    parser = argparse.ArgumentParser(description="Xem top-k đoạn PDF và trang nguồn, không gọi AI.")
+    parser.add_argument("--course", help="course_id; bỏ trống để liệt kê học phần")
+    parser.add_argument("--question", help="Câu hỏi cần truy xuất")
+    parser.add_argument("--top-k", type=int, default=3, choices=range(1, 11), metavar="1..10")
     args = parser.parse_args()
     manager = CourseManager(Path(__file__).resolve().parents[1])
     if not args.course:
         output = [course.model_dump() for course in manager.list_courses()]
     else:
-        if not args.question or not args.question.strip():
+        if not args.question:
             parser.error("--question là bắt buộc khi dùng --course")
-        if manager.get_course_documents(args.course) is None:
-            parser.error("Không tìm thấy mã học phần")
+        if args.course not in {course.course_id for course in manager.list_courses()}:
+            parser.error("Không tìm thấy course_id")
+        # Diagnostic access to the exact index snapshot used by CourseManager.
         retriever = manager._catalog.retrievers.get(args.course)
-        sources = manager._lookup_sources(retriever, args.question, limit=args.top_k) if retriever else []
+        sources = retriever.search(args.question, limit=args.top_k) if retriever else []
         output = {
             "course_id": args.course,
             "question": args.question,

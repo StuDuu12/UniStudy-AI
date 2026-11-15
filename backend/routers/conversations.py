@@ -48,5 +48,5 @@ def rename_conversation(conversation_id: str, payload: RenameConversationRequest
     except ConversationStorageError:
         raise HTTPException(status_code=500, detail=_STORAGE_ERROR) from None
     if updated is None:
-        raise HTTPException(status_code=404, detail="Không tìm thấy hội thoại.")
+        raise HTTPException(status_code=404, detail="Conversation not found")
     return updated

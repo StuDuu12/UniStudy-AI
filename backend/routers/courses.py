@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
+from pydantic import BaseModel
 from python_multipart.exceptions import FormParserError
 from python_multipart.multipart import parse_options_header
 from starlette.concurrency import run_in_threadpool
@@ -6,6 +7,7 @@ from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartException, MultiPartParser
 
 from backend.schemas.chat import CourseItem, CourseListResponse, DocumentListResponse
+from backend.services.course_manager import CourseCatalogStorageError
 from services.course_upload import CourseNotFoundError, CourseUploadError, MAX_PDF_FILES, MAX_PDF_MB
 
 router = APIRouter()
@@ -15,6 +17,10 @@ _MAX_UPLOAD_BYTES = MAX_PDF_FILES * _MAX_PDF_BYTES + 64 * 1024
 
 class _UploadTooLarge(MultiPartException):
     pass
+
+
+class RenameCourseRequest(BaseModel):
+    course_name: str
 
 
 async def _read_upload(request: Request, *, with_name: bool) -> tuple[str, list[tuple[str, bytes]]]:
@@ -77,6 +83,29 @@ async def post_course(request: Request):
         return await run_in_threadpool(request.app.state.course_manager.add_course, name, files)
     except CourseUploadError as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
+
+
+@router.patch("/courses/{course_id}", response_model=CourseItem)
+def patch_course(course_id: str, payload: RenameCourseRequest, request: Request):
+    try:
+        return request.app.state.course_manager.rename_course(course_id, payload.course_name)
+    except CourseNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from None
+    except CourseUploadError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    except CourseCatalogStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from None
+
+
+@router.delete("/courses/{course_id}", status_code=204, response_class=Response)
+def delete_course(course_id: str, request: Request):
+    try:
+        request.app.state.course_manager.delete_course(course_id)
+    except CourseNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from None
+    except CourseCatalogStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from None
+    return Response(status_code=204)
 
 
 @router.get("/courses/{course_id}/documents", response_model=DocumentListResponse)

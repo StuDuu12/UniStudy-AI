@@ -23,6 +23,21 @@ def get_document_details(document_id: str, request: Request):
     )
 
 
+@router.get("/documents/{document_id}/page/{page}/excerpt")
+def get_document_excerpt(
+    document_id: str,
+    page: int,
+    request: Request,
+    chunk_id: str,
+    digest: Annotated[str, Query(alias="sha256", pattern=r"^[0-9a-f]{64}$")],
+):
+    manager = request.app.state.course_manager
+    excerpt = manager.get_formatted_excerpt(document_id, page, chunk_id, digest)
+    if excerpt is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy đoạn trích theo nguồn đã lưu.")
+    return {"markdown": excerpt}
+
+
 @router.get("/documents/{document_id}/page/{page}")
 def get_document_page_preview(
     document_id: str,

@@ -1,7 +1,7 @@
 import csv
 import os
 import unicodedata
-from collections.abc import Iterator, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -26,11 +26,18 @@ class CourseNotFoundError(CourseUploadError):
     pass
 
 
-def add_course(data_dir: Path, course_name: str, files: Sequence[tuple[str, bytes]]) -> str:
+def validate_course_name(course_name: str) -> str:
     name = _clean_name(course_name)
     if not name or len(name) > MAX_COURSE_NAME_LENGTH:
         raise CourseUploadError(f"Hãy nhập tên học phần từ 1 đến {MAX_COURSE_NAME_LENGTH} ký tự.")
-    return _save_upload(data_dir, files, name=name)
+    return name
+
+
+def add_course(
+    data_dir: Path, course_name: str, files: Sequence[tuple[str, bytes]], *,
+    active_course_names: Collection[str] | None = None,
+) -> str:
+    return _save_upload(data_dir, files, name=validate_course_name(course_name), active_course_names=active_course_names)
 
 
 def append_course_documents(data_dir: Path, course_id: str, files: Sequence[tuple[str, bytes]]) -> None:
@@ -38,7 +45,8 @@ def append_course_documents(data_dir: Path, course_id: str, files: Sequence[tupl
 
 
 def _save_upload(
-    data_dir: Path, files: Sequence[tuple[str, bytes]], *, name: str = "", course_id: str | None = None
+    data_dir: Path, files: Sequence[tuple[str, bytes]], *, name: str = "", course_id: str | None = None,
+    active_course_names: Collection[str] | None = None,
 ) -> str:
     if not 1 <= len(files) <= MAX_PDF_FILES:
         raise CourseUploadError(f"Hãy chọn từ 1 đến {MAX_PDF_FILES} tệp PDF.")
@@ -78,6 +86,8 @@ def _save_upload(
                     catalog.setdefault(row["course_id"].strip(), existing_name)
                     known_names.add(existing_name.casefold())
             if course_id is None:
+                if active_course_names is not None:
+                    known_names = {active_name.casefold() for active_name in active_course_names}
                 if name.casefold() in known_names:
                     raise CourseUploadError("Tên học phần này đã có. Hãy chọn tên khác.")
                 course_id = f"course_{uuid4().hex}"

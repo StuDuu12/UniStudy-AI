@@ -1,11 +1,10 @@
 import type { ChatStatus, Message, Source } from '../types/api';
-import { deleteServerConversation, renameServerConversation, saveServerConversation } from './api';
+import { deleteServerConversation, saveServerConversation } from './api';
 
 export interface Conversation {
   id: string;
   courseId: string;
   title: string;
-  titleVersion?: number;
   updatedAt: number;
   messages: Message[];
 }
@@ -54,7 +53,6 @@ function isConversation(value: unknown): value is Conversation {
   return isRecord(value) && typeof value.id === 'string' && Boolean(value.id)
     && typeof value.courseId === 'string' && Boolean(value.courseId)
     && typeof value.title === 'string' && Boolean(value.title)
-    && (value.titleVersion === undefined || (Number.isSafeInteger(value.titleVersion) && Number(value.titleVersion) >= 0))
     && typeof value.updatedAt === 'number' && Number.isInteger(value.updatedAt)
     && value.updatedAt >= 0 && value.updatedAt <= 8.64e15
     && Array.isArray(value.messages) && value.messages.every(isMessage)
@@ -142,17 +140,6 @@ export function mergeMessages(persisted: Message[], incoming: Message[]): Messag
   return turns.flatMap((message) => [message, ...(replies.get(message.id) ?? [])]);
 }
 
-export function mergeConversation(persisted: Conversation, incoming: Conversation): Conversation {
-  const latestTitle = (incoming.titleVersion ?? 0) > (persisted.titleVersion ?? 0) ? incoming : persisted;
-  return {
-    ...persisted,
-    title: latestTitle.title,
-    titleVersion: latestTitle.titleVersion,
-    updatedAt: Math.max(persisted.updatedAt, incoming.updatedAt),
-    messages: mergeMessages(persisted.messages, incoming.messages),
-  };
-}
-
 let pendingWrite: Promise<unknown> = Promise.resolve();
 
 function withHistoryLock<T>(action: () => Promise<T>): Promise<T> {
@@ -187,7 +174,12 @@ export async function saveHistory(
         if (deleted.has(thread.id)) continue;
         const persisted = conversations.get(thread.id);
         if (persisted && persisted.courseId !== thread.courseId) continue;
-        const merged = persisted ? mergeConversation(persisted, thread) : thread;
+        const merged = persisted ? {
+          ...persisted,
+          title: thread.title || persisted.title,
+          updatedAt: Math.max(persisted.updatedAt, thread.updatedAt),
+          messages: mergeMessages(persisted.messages, thread.messages),
+        } : thread;
         conversations.set(thread.id, merged);
         if (syncServer && previousThreads.get(thread.id) !== thread) changed.push(merged);
       }
@@ -230,11 +222,17 @@ export function deleteHistory(id: string): Promise<string> {
   });
 }
 
-export function renameHistory(id: string, title: string): Promise<Conversation> {
+export function renameConversation(id: string, newTitle: string): Promise<string> {
   return withHistoryLock(async () => {
     const { history } = readHistory();
-    if (history.deletedIds.includes(id)) throw new Error('Không tìm thấy hội thoại.');
-    return renameServerConversation(id, title);
+    const title = newTitle.trim();
+    if (!title) return '';
+    return writeLocal({
+      ...history,
+      conversations: history.conversations.map((thread) =>
+        thread.id === id ? { ...thread, title } : thread
+      ),
+    });
   });
 }
 

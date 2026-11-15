@@ -3,6 +3,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
+from starlette.datastructures import State
 
 from backend.main import app
 from backend.services.course_manager import CourseManager
@@ -20,7 +21,8 @@ def seeded_manager(tmp_path, monkeypatch):
         "He dieu hanh co nhung chuc nang gi?\nQuan ly tai nguyen va thuc hien chuong trinh.",
     )
     seed_document(data, "software_testing", "project_demo", "seed-testing.pdf", "Software testing fundamentals")
-    monkeypatch.setattr(app.state, "course_manager", CourseManager(tmp_path))
+    # Replace the state object so pytest can restore it without dynamic-attribute hooks.
+    monkeypatch.setattr(app, "state", State({"course_manager": CourseManager(tmp_path)}))
 
 
 def test_health():
@@ -36,11 +38,67 @@ def test_get_courses():
     assert "courses" in data
     course_ids = [c["course_id"] for c in data["courses"]]
     assert "tin_hoc_dai_cuong" in course_ids
+    thdc = next(c for c in data["courses"] if c["course_id"] == "tin_hoc_dai_cuong")
+    assert len(thdc["suggested_questions"]) > 0
+    assert "Hệ điều hành có những chức năng gì?" in thdc["suggested_questions"]
     assert "software_testing" in course_ids
     for course in data["courses"]:
         assert "course_name" in course
         assert "document_count" in course
         assert "status" in course
+
+
+def test_rename_course_keeps_identity_and_sources_after_restart(tmp_path, monkeypatch):
+    course_id = "tin_hoc_dai_cuong"
+    route = f"/api/courses/{course_id}"
+    response = client.patch(route, json={"course_name": "  Nhập môn   tin học  "})
+    assert response.status_code == 200
+    assert response.json()["course_name"] == "Nhập môn tin học"
+    assert response.json()["course_id"] == course_id
+    assert response.json()["document_count"] == 1
+
+    monkeypatch.setattr(app.state, "course_manager", CourseManager(tmp_path))
+    courses = client.get("/api/courses").json()["courses"]
+    assert next(course for course in courses if course["course_id"] == course_id)["course_name"] == "Nhập môn tin học"
+    result = client.post("/api/chat", json={"course_id": course_id, "question": "Hệ điều hành có những chức năng gì?"})
+    assert result.json()["sources"][0]["document_id"] == "seed_tin_hoc_dai_cuong"
+    assert client.patch(route, json={"course_name": "Kiểm thử phần mềm"}).status_code == 400
+    assert client.patch(route, json={"course_name": "   "}).status_code == 400
+
+
+def test_delete_course_hides_catalog_and_search_but_retains_data(tmp_path, monkeypatch):
+    course_id = "tin_hoc_dai_cuong"
+    route = f"/api/courses/{course_id}"
+    pdf = app.state.course_manager.get_document_info("seed_tin_hoc_dai_cuong").path
+    conversation = {"id": "retained", "course_id": course_id, "title": "Lịch sử", "updated_at": 1}
+    assert client.post("/api/conversations", json=conversation).status_code == 200
+
+    assert client.delete(route).status_code == 204
+    assert client.delete(route).status_code == 404
+    assert client.patch(route, json={"course_name": "Tên mới"}).status_code == 404
+    assert client.post(f"{route}/documents", files=[pdf_file("new.pdf", "operating system")]).status_code == 404
+    assert client.get("/api/documents/seed_tin_hoc_dai_cuong").status_code == 404
+    assert pdf.is_file()
+
+    monkeypatch.setattr(app.state, "course_manager", CourseManager(tmp_path))
+    assert course_id not in {c["course_id"] for c in client.get("/api/courses").json()["courses"]}
+    assert client.get(f"{route}/documents").status_code == 404
+    assert client.post("/api/chat", json={"course_id": course_id, "question": "Hệ điều hành là gì?"}).status_code == 404
+    assert app.state.course_manager.get_conversations(course_id)[0].id == "retained"
+
+
+def test_removed_course_name_can_be_reused_without_restoring_old_documents():
+    old = client.post("/api/courses", data={"course_name": "Mạng máy tính"}, files=[pdf_file("old.pdf", "Old network handbook")])
+    assert old.status_code == 201
+    old_id = old.json()["course_id"]
+    assert client.delete(f"/api/courses/{old_id}").status_code == 204
+
+    new = client.post("/api/courses", data={"course_name": "Mạng máy tính"}, files=[pdf_file("new.pdf", "New network handbook")])
+    assert new.status_code == 201
+    assert new.json()["course_id"] != old_id
+    assert old_id not in {c["course_id"] for c in client.get("/api/courses").json()["courses"]}
+    documents = client.get(f"/api/courses/{new.json()['course_id']}/documents").json()["documents"]
+    assert [document["document_name"] for document in documents] == ["new.pdf"]
 
 
 def test_get_course_documents():
@@ -457,5 +515,44 @@ def test_failed_conversation_replace_keeps_the_previous_file(tmp_path, monkeypat
     assert response.status_code == 500
     assert path.read_bytes() == before
     assert set(path.parent.iterdir()) == existing_files
+
+
+def test_rename_conversation():
+    payload = {
+        "id": "conv-rename-test",
+        "course_id": "tin_hoc_dai_cuong",
+        "title": "Tiêu đề cũ",
+        "updated_at": 1794226810000,
+        "messages": [
+            {
+                "id": "msg-1",
+                "sender": "user",
+                "content": "Câu hỏi test",
+                "timestamp": "19:30",
+            },
+        ],
+    }
+    save_res = client.post("/api/conversations", json=payload)
+    assert save_res.status_code == 200
+
+    # Rename
+    patch_res = client.patch("/api/conversations/conv-rename-test", json={"title": "Tiêu đề mới"})
+    assert patch_res.status_code == 200
+    assert patch_res.json()["title"] == "Tiêu đề mới"
+    assert patch_res.json()["id"] == "conv-rename-test"
+
+    # Verify via get
+    get_res = client.get("/api/conversations?course_id=tin_hoc_dai_cuong")
+    assert get_res.status_code == 200
+    conv = next(c for c in get_res.json()["conversations"] if c["id"] == "conv-rename-test")
+    assert conv["title"] == "Tiêu đề mới"
+
+    # Rename 404
+    not_found = client.patch("/api/conversations/non-existent-id", json={"title": "Tiêu đề mới"})
+    assert not_found.status_code == 404
+
+    # Validation 422
+    invalid = client.patch("/api/conversations/conv-rename-test", json={"title": ""})
+    assert invalid.status_code == 422
 
 

@@ -9,13 +9,12 @@ from hashlib import sha256
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import Lock
-from time import time_ns
 
 from pydantic import TypeAdapter, ValidationError
 
 from backend.schemas.chat import (
-    ChatMode,
     ChatResponse,
+    ChatMode,
     ChatStatus,
     ConversationModel,
     CourseItem,
@@ -23,14 +22,74 @@ from backend.schemas.chat import (
     MessageModel,
     SourceItem,
 )
-from backend.services.evidence import EVIDENCE_THRESHOLD, normalize_text, retrieval_query
+from backend.services.evidence import EVIDENCE_THRESHOLD, retrieval_query
 from backend.services.ingest import ChunkSource, DocumentInfo, extract_pdf_chunks, get_pdf_page_count
-from backend.services.llm_service import AIConfig, AIUnavailable
-from backend.services.pdf_text import readable_pdf_text
-from backend.services.query import query_parts
 from backend.services.retrieval import CourseRetriever
-from services.course_upload import CourseUploadError, add_course, append_course_documents
+from backend.services.llm_service import AIConfig, AIUnavailable, get_provider_config
+from backend.services.query import query_parts
+from backend.services.pdf_text import format_academic_document_content, readable_pdf_text
+from services.course_upload import (
+    CourseNotFoundError, CourseUploadError, add_course, append_course_documents, validate_course_name,
+)
 from services.retrieval import read_manifest, valid_manifest_row
+
+
+def format_math_latex(text: str) -> str:
+    """Normalize extracted or AI-generated math symbols and expressions to standard LaTeX."""
+    replacements = {
+        "\uf0c6": r"$\emptyset$",
+        "\uf0cd": r"$\subseteq$",
+        "\uf0cc": r"$\subset$",
+        "\uf0ce": r"$\in$",
+        "\uf0c7": r"$\cap$",
+        "\uf0c8": r"$\cup$",
+        "\uf0d8": r"$\vee$",
+        "\uf0d9": r"$\wedge$",
+        "\uf0ac": r"$\neg$",
+        "\uf0de": r"$\Rightarrow$",
+        "\uf0db": r"$\Leftrightarrow$",
+        "∅": r"$\emptyset$",
+        "⊆": r"$\subseteq$",
+        "⊂": r"$\subset$",
+        "∈": r"$\in$",
+        "∩": r"$\cap$",
+        "∪": r"$\cup$",
+        "≤": r"$\le$",
+        "≥": r"$\ge$",
+        "≠": r"$\ne$",
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+
+    # 2^|S| or 2|S| -> $2^{|S|}$
+    text = re.sub(r"(?<!\$)\b2\^\|S\|(?!\$)", r"$2^{|S|}$", text)
+    text = re.sub(r"(bằng|là|bằng\s+với)\s+2\|S\|", r"\1 $2^{|S|}$", text)
+    text = re.sub(r"(?<!\$)\b2\^([0-9a-zA-Z]+)\s*=\s*([0-9]+)(?!\$)", r"$2^{\1} = \2$", text)
+    # Power set P(S) -> $\mathcal{P}(S)$
+    text = re.sub(r"(?<!\$)\bP\(([A-Z])\)(?!\$)", r"$\\mathcal{P}(\1)$", text)
+    # Clean up double wrapping
+    text = re.sub(r"\${2,}([^$]+)\${2,}", r"$\1$", text)
+    return text
+
+
+def clean_excerpt_symbols(text: str) -> str:
+    """Clean broken private-use glyphs in excerpts so they display as standard unicode."""
+    replacements = {
+        "\uf0c6": "∅",
+        "\uf0cd": "⊆",
+        "\uf0cc": "⊂",
+        "\uf0ce": "∈",
+        "\uf0c7": "∩",
+        "\uf0c8": "∪",
+        "\uf0d8": "∨",
+        "\uf0d9": "∧",
+        "\uf0ac": "¬",
+        "\uf0de": "⇒",
+        "\uf0db": "⇔",
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+    return text
 
 
 COURSE_DISPLAY_NAMES = {
@@ -56,42 +115,34 @@ COURSE_SUGGESTED_QUESTIONS = {
     ],
     "algorithm_analysis": [
         "Big O là gì và biểu diễn cận trên như thế nào?",
-        "Quy tắc tuần tự khi phân tích thời gian tính là gì?",
+        "Hai vòng lặp độc lập chạy nối tiếp thì cộng hay nhân chi phí?",
         "Trường hợp cơ sở có vai trò gì trong hệ thức truy hồi của đệ quy?",
         "Vì sao sắp xếp trộn có độ phức tạp O(n log n)?",
     ],
     "toan_roi_rac": [
-        "Định nghĩa mệnh đề trong logic mệnh đề là gì?",
-        "Các phép toán tập hợp cơ bản gồm những phép toán nào?",
-        "Đại số Boole có những tính chất và tiên đề cơ bản nào?",
-        "Định nghĩa đồ thị liên thông và đường đi Euler?",
+        "Mệnh đề là gì?",
+        "Tập hợp là gì?",
+        "Phép hợp và phép giao là gì?",
+        "Đường một nét Euler là gì?",
     ],
     "thu_thap_phan_tich_yeu_cau": [
         "Yêu cầu chức năng khác yêu cầu phi chức năng như thế nào?",
         "Các kỹ thuật phổ biến để khám phá yêu cầu phần mềm?",
         "Biểu đồ Use Case dùng để mô hình hóa khía cạnh nào của hệ thống?",
-        "Tại sao cần tài liệu hóa yêu cầu bằng ngôn ngữ tự nhiên rõ ràng?",
+        "Tài liệu hóa yêu cầu bằng ngôn ngữ tự nhiên có ưu điểm gì?",
     ],
 }
 
-_AI_ISSUES = {
-    "credentials": "Dịch vụ AI từ chối khóa hoặc quyền truy cập. Hãy kiểm tra cấu hình AI.",
-    "model": "Model AI đã cấu hình chưa khả dụng với tài khoản này.",
-    "quota": "Dịch vụ AI đang giới hạn số lượt gọi hoặc hạn mức của tài khoản.",
-    "format": "AI trả phản hồi chưa đúng định dạng hoặc trích dẫn không hợp lệ.",
-    "network": "Kết nối tới AI bị gián đoạn hoặc quá thời gian chờ.",
-}
 
-
-def _source_item(source: ChunkSource) -> SourceItem:
+def source_item(source: ChunkSource) -> SourceItem:
+    formatted = format_academic_document_content(source.formatted_excerpt or source.excerpt) if (source.formatted_excerpt or source.excerpt) else None
     return SourceItem(
-        chunk_id=source.chunk_id,
-        document_id=source.document_id,
-        document_name=source.document_name,
-        page=source.page,
+        chunk_id=source.chunk_id, document_id=source.document_id,
+        document_name=source.document_name, page=source.page,
         excerpt=readable_pdf_text(source.excerpt),
         score=round(source.score, 3) if source.score else None,
         document_sha256=source.document_sha256,
+        formatted_excerpt=formatted,
     )
 
 
@@ -111,7 +162,12 @@ class ConversationStorageError(Exception):
     pass
 
 
+class CourseCatalogStorageError(Exception):
+    pass
+
+
 _CONVERSATIONS = TypeAdapter(list[ConversationModel])
+_COURSE_OVERRIDES = TypeAdapter(dict[str, str | None])
 
 
 def _merge_messages(persisted: list[MessageModel], incoming: list[MessageModel]) -> list[MessageModel]:
@@ -146,53 +202,24 @@ class CourseManager:
         self.local_dir = self.data_dir / "local_course_pdfs"
         self._upload_lock = Lock()
         self._conversation_lock = Lock()
+        self._course_overrides = self._read_course_overrides()
         self._catalog = self._load_catalog()
         self._ai = AIConfig.load(self.project_root / ".env")
 
-    def _synthesize_answer(self, sources: list[ChunkSource], *, multipart: bool) -> str:
-        excerpts = [
-            f"Theo giáo trình **{source.document_name}** (Trang {source.page}):\n\n> {source.excerpt}"
-            for source in (sources if multipart else sources[:1])
-        ]
-        if multipart:
-            excerpts.insert(0, "Các đoạn liên quan dưới đây có thể chưa bao phủ mọi ý trong câu hỏi.")
-        return "\n\n".join(excerpts)
-
-    def _lookup_sources(
-        self, retriever: CourseRetriever, query: str, *, contextual: bool = False, limit: int | None = None
-    ) -> list[ChunkSource]:
-        direct_limit = limit
-        if direct_limit is None:
-            part_count = 1 if contextual else len(query_parts(query))
-            direct_limit = min(6, max(3, part_count))
-            if re.search(r"\b(?:gom|nhung phep|cac phep|tinh chat|tien de)\b", normalize_text(query)):
-                direct_limit = 6
-        sources = retriever.search(query, direct_limit, minimum_score=EVIDENCE_THRESHOLD, contextual=contextual)
-        if limit is not None or direct_limit != 6:
-            return sources
-
-        # A numbered section or list may span several pages of the same PDF.
-        anchors = sources[:3]
-        seen = {source.chunk_id for source in sources}
-        for same_heading in (True, False):
-            for anchor in anchors:
-                if same_heading and not re.match(r"^\d+\.\s", anchor.heading):
-                    continue
-                for candidate in retriever.chunks:
-                    if candidate.document_id != anchor.document_id or candidate.chunk_id in seen:
-                        continue
-                    matches = (
-                        candidate.heading == anchor.heading if same_heading else abs(candidate.page - anchor.page) == 1
-                    )
-                    if matches:
-                        sources.append(replace(candidate, score=0.0))
-                        seen.add(candidate.chunk_id)
-                        if len(sources) == 12:
-                            return sources
-        return sources
+    def _synthesize_answer(self, query: str, sources: list[ChunkSource]) -> str:
+        if not sources:
+            return "Đã tìm thấy các đoạn học liệu liên quan."
+        selected = sources if len(query_parts(query)) > 1 else sources[:1]
+        sections = []
+        for s in selected:
+            structured = format_academic_document_content(s.formatted_excerpt or s.excerpt)
+            sections.append(f"Theo giáo trình **{s.document_name}** (Trang {s.page}):\n\n{structured}")
+        prefix = "Dưới đây là nội dung trích xuất từ giáo trình đối chiếu với câu hỏi:\n\n" if len(sections) > 1 else ""
+        return prefix + "\n\n---\n\n".join(sections)
 
     def _load_catalog(self) -> _Catalog:
-        names = dict(COURSE_DISPLAY_NAMES)
+        names = {course_id: name for course_id, name in COURSE_DISPLAY_NAMES.items()
+                 if self._course_overrides.get(course_id, name) is not None}
         documents: dict[str, list[DocumentInfo]] = defaultdict(list)
         chunks: dict[str, list[ChunkSource]] = defaultdict(list)
         document_map: dict[str, DocumentInfo] = {}
@@ -207,6 +234,8 @@ class CourseManager:
                         continue
                     course_id = row["course_id"].strip()
                     name = (row.get("course_name") or "").strip()
+                    if self._course_overrides.get(course_id, name) is None:
+                        continue
                     if course_id not in names and (license_type != "local_only" or not name):
                         continue
                     names.setdefault(course_id, name)
@@ -226,7 +255,7 @@ class CourseManager:
         courses = {
             course_id: CourseItem(
                 course_id=course_id,
-                course_name=name,
+                course_name=self._course_overrides.get(course_id) or name,
                 document_count=len(documents[course_id]),
                 status="ready" if documents[course_id] else "empty",
                 suggested_questions=COURSE_SUGGESTED_QUESTIONS.get(course_id, []),
@@ -275,7 +304,10 @@ class CourseManager:
 
     def add_course(self, name: str, files: Sequence[tuple[str, bytes]]) -> CourseItem:
         with self._upload_lock:
-            course_id = add_course(self.local_dir, name, files)
+            course_id = add_course(
+                self.local_dir, name, files,
+                active_course_names=[course.course_name for course in self._catalog.courses.values()],
+            )
             self._catalog = self._load_catalog()
             course = self._catalog.courses.get(course_id)
             if course is None:
@@ -284,9 +316,75 @@ class CourseManager:
 
     def append_documents(self, course_id: str, files: Sequence[tuple[str, bytes]]) -> list[DocumentItem]:
         with self._upload_lock:
+            if course_id not in self._catalog.courses:
+                raise CourseNotFoundError("Học phần không tồn tại.")
             append_course_documents(self.local_dir, course_id, files)
             self._catalog = self._load_catalog()
             return self._catalog.documents[course_id]
+
+    def rename_course(self, course_id: str, course_name: str) -> CourseItem:
+        with self._upload_lock:
+            catalog = self._catalog
+            course = catalog.courses.get(course_id)
+            if course is None:
+                raise CourseNotFoundError("Học phần không tồn tại.")
+            name = validate_course_name(course_name)
+            if any(other.course_id != course_id and other.course_name.casefold() == name.casefold()
+                   for other in catalog.courses.values()):
+                raise CourseUploadError("Tên học phần này đã có. Hãy chọn tên khác.")
+            updated = course.model_copy(update={"course_name": name})
+            self._write_course_overrides({**self._course_overrides, course_id: name})
+            self._catalog = replace(catalog, courses={**catalog.courses, course_id: updated})
+            return updated
+
+    def delete_course(self, course_id: str) -> None:
+        with self._upload_lock:
+            catalog = self._catalog
+            if course_id not in catalog.courses:
+                raise CourseNotFoundError("Học phần không tồn tại.")
+            courses = catalog.courses.copy()
+            documents = catalog.documents.copy()
+            document_map = catalog.document_map.copy()
+            retrievers = catalog.retrievers.copy()
+            courses.pop(course_id)
+            for document in documents.pop(course_id, []):
+                document_map.pop(document.document_id, None)
+            retrievers.pop(course_id, None)
+            # A null override keeps the course out of future catalog loads.
+            self._write_course_overrides({**self._course_overrides, course_id: None})
+            self._catalog = _Catalog(courses, documents, document_map, retrievers)
+
+    def _read_course_overrides(self) -> dict[str, str | None]:
+        path = self.data_dir / "course_overrides.json"
+        try:
+            if path.resolve() != path:
+                raise OSError("Invalid course metadata path")
+            return _COURSE_OVERRIDES.validate_json(path.read_bytes())
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValidationError):
+            raise CourseCatalogStorageError("Không thể đọc thông tin học phần đã lưu.") from None
+
+    def _write_course_overrides(self, overrides: dict[str, str | None]) -> None:
+        path = self.data_dir / "course_overrides.json"
+        staged = None
+        try:
+            if path.resolve() != path:
+                raise OSError("Invalid course metadata path")
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            with NamedTemporaryFile(dir=self.data_dir, delete=False) as file:
+                staged = Path(file.name)
+                file.write(_COURSE_OVERRIDES.dump_json(overrides, indent=2))
+                file.flush()
+                os.fsync(file.fileno())
+            staged.replace(path)
+        except OSError:
+            raise CourseCatalogStorageError("Không thể lưu thay đổi học phần.") from None
+        finally:
+            if staged is not None:
+                with suppress(OSError):
+                    staged.unlink(missing_ok=True)
+        self._course_overrides = overrides
 
     def list_courses(self) -> list[CourseItem]:
         return list(self._catalog.courses.values())
@@ -296,6 +394,15 @@ class CourseManager:
 
     def get_document_info(self, document_id: str) -> DocumentInfo | None:
         return self._catalog.document_map.get(document_id)
+
+    def get_formatted_excerpt(self, document_id: str, page: int, chunk_id: str, digest: str) -> str | None:
+        for retriever in self._catalog.retrievers.values():
+            for chunk in retriever.chunks:
+                if (chunk.document_id, chunk.page, chunk.chunk_id, chunk.document_sha256) == (
+                    document_id, page, chunk_id, digest
+                ):
+                    return chunk.formatted_excerpt or None
+        return None
 
     def get_conversations(self, course_id: str | None = None) -> list[ConversationModel]:
         with self._conversation_lock:
@@ -314,17 +421,10 @@ class CourseManager:
                 if persisted.course_id != conversation.course_id:
                     raise ConversationConflict
                 latest = conversation if conversation.updated_at > persisted.updated_at else persisted
-                conversation = latest.model_copy(update={
-                    "title": persisted.title if persisted.title_version > 0 else latest.title,
-                    "title_version": persisted.title_version,
-                    "messages": _merge_messages(persisted.messages, conversation.messages),
-                })
+                conversation = latest.model_copy(update={"messages": _merge_messages(persisted.messages, conversation.messages)})
                 data[index] = conversation
             else:
-                conversation = conversation.model_copy(update={
-                    "title_version": 0,
-                    "messages": _merge_messages([], conversation.messages),
-                })
+                conversation = conversation.model_copy(update={"messages": _merge_messages([], conversation.messages)})
                 data.insert(0, conversation)
             self._write_conversations(data)
             return conversation
@@ -339,20 +439,16 @@ class CourseManager:
             return False
 
     def rename_conversation(self, conversation_id: str, new_title: str) -> ConversationModel | None:
-        title = new_title.strip()
+        title = new_title.strip() or new_title
         with self._conversation_lock:
             data = self._read_conversations()
-            for index, persisted in enumerate(data):
-                if persisted.id != conversation_id:
-                    continue
-                updated = persisted.model_copy(update={
-                    "title": title,
-                    "title_version": max(persisted.title_version + 1, time_ns() // 1_000_000),
-                })
-                data[index] = updated
-                self._write_conversations(data)
-                return updated
-            return None
+            index = next((i for i, c in enumerate(data) if c.id == conversation_id), None)
+            if index is None:
+                return None
+            updated = data[index].model_copy(update={"title": title})
+            data[index] = updated
+            self._write_conversations(data)
+            return updated
 
     def _read_conversations(self) -> list[ConversationModel]:
         file_path = self.data_dir / "conversations.json"
@@ -382,10 +478,23 @@ class CourseManager:
                     staged.unlink(missing_ok=True)
 
     def answer_question(
-        self, course_id: str, question: str, previous_questions: Sequence[str] = ()
+        self,
+        course_id: str,
+        question: str,
+        previous_questions: Sequence[str] = (),
+        model_provider: str | None = None,
+        model_name: str | None = None,
+        api_key: str | None = None,
     ) -> ChatResponse:
         def notice(status: ChatStatus, message: str) -> ChatResponse:
-            return ChatResponse(status=status, answer="", mode="lookup", message=message)
+            return ChatResponse(
+                status=status,
+                answer="",
+                mode="lookup",
+                message=message,
+                model_name=model_name,
+                model_provider=model_provider,
+            )
 
         catalog = self._catalog
         if course_id not in catalog.courses:
@@ -398,56 +507,132 @@ class CourseManager:
         if resolved is None:
             return notice("needs_clarification", "Bạn có thể nêu rõ khái niệm hoặc bài đang muốn hỏi không?")
         query, context_question = resolved
-        contextual = query != context_question
 
         retriever = catalog.retrievers.get(course_id)
         if retriever is None:
             return notice("no_documents", "Chưa có dữ liệu tìm kiếm cho học phần này.")
-        sources = self._lookup_sources(retriever, query, contextual=contextual)
+        limit = min(6, max(3, len(query_parts(query))))
+        if re.search(r"gồm|bao gồm|những phép|cac phep|các phép|tính chất|tiên đề", query, re.IGNORECASE):
+            limit = 6
+        sources = [source for source in retriever.search(query, limit=limit) if source.score >= EVIDENCE_THRESHOLD]
         if not sources:
-            return notice("insufficient_evidence", "Chưa tìm thấy căn cứ đủ phù hợp trong tài liệu đã nạp.")
+            message = "Không tìm thấy tài liệu phù hợp trong giáo trình cho câu hỏi này. Bạn hãy đặt câu hỏi liên quan đến nội dung bài giảng của môn học."
+            if model_provider and model_name != "lookup":
+                message += " Hệ thống chưa gọi mô hình vì thiếu đoạn nguồn phù hợp."
+            return notice("insufficient_evidence", message)
+        if limit == 6:
+            # Slides often split one list across adjacent physical pages. Include bounded
+            # context without pretending that adjacent pages have a similarity score.
+            anchors = list(sources[:3])
+            seen = {s.chunk_id for s in sources}
+            # Carry section headings from PDF ingestion: a definition and its laws
+            # frequently span several slides under the same numbered heading.
+            for anchor in anchors:
+                if not re.match(r"^\d+\.\s", anchor.heading):
+                    continue
+                for candidate in retriever.chunks:
+                    if (candidate.document_id == anchor.document_id
+                            and candidate.heading == anchor.heading
+                            and candidate.chunk_id not in seen and len(sources) < 12):
+                        sources.append(replace(candidate, score=0.0))
+                        seen.add(candidate.chunk_id)
+            for anchor in anchors:
+                for candidate in retriever.chunks:
+                    if (candidate.document_id == anchor.document_id
+                            and abs(candidate.page - anchor.page) == 1
+                            and candidate.chunk_id not in seen and len(sources) < 12):
+                        sources.append(replace(candidate, score=0.0))
+                        seen.add(candidate.chunk_id)
 
-        status: ChatStatus = "success"
+        ai_answer = ""
+        cited_sources = sources
         mode: ChatMode = "lookup"
-        message = None
-        if self._ai:
-            mode = "ai"
-            evidence = sources
-            if not getattr(self._ai, "is_local", False):
-                # Keep adjacent uploaded passages available for lookup and loopback AI.
-                local_document_ids = {
-                    document.document_id for document in retriever.documents if document.license == "local_only"
-                }
-                evidence = [
-                    source for source in sources if source.score > 0 or source.document_id not in local_document_ids
-                ]
+        response_status: ChatStatus = "success"
+        response_message = None
+
+        ai_config, error_reason = get_provider_config(model_provider, api_key, self._ai, model_name=model_name)
+
+        if error_reason == "missing_key":
+            provider_title = "Google Gemini" if model_provider == "gemini" else "OpenAI ChatGPT"
+            return ChatResponse(
+                status="ai_unavailable",
+                answer="",
+                mode="lookup",
+                context_question=context_question,
+                message=f"Chưa có API Key cho {provider_title}. Vui lòng nhập API Key ở menu chuyển đổi mô hình (ngay thanh hỏi) để kích hoạt giải thích bằng AI.",
+                sources=[source_item(s) for s in sources],
+                model_name=model_name,
+                model_provider=model_provider,
+            )
+
+        if ai_config:
             try:
-                answer, cited = self._ai.explain(query, evidence)
-                if answer:
-                    cited_ids = {source.chunk_id for source in cited}
-                    if not cited_ids or not cited_ids <= {source.chunk_id for source in evidence}:
-                        raise ValueError("Invalid answer citations")
-                    sources = [source for source in sources if source.chunk_id in cited_ids]
-                else:
-                    status = "insufficient_evidence"
-                    message = (
-                        "AI chưa xác nhận đủ căn cứ cho câu hỏi. "
-                        "Bạn có thể đối chiếu các đoạn liên quan bên dưới hoặc hỏi cụ thể hơn."
+                raw_ans, cited = ai_config.explain(query, sources)
+                if not raw_ans:
+                    response_status = "insufficient_evidence"
+                    response_message = "AI chưa xác nhận đủ căn cứ cho toàn bộ câu hỏi. Các đoạn liên quan vẫn có ở dưới để bạn đối chiếu hoặc hỏi hẹp hơn."
+                    mode = "ai"
+                    cited_sources = sources
+                    # Preserve the model's refusal, but don't hide retrieved documents.
+                    return ChatResponse(
+                        status=response_status, answer="", mode=mode,
+                        context_question=context_question, message=response_message,
+                        sources=[source_item(s) for s in sources],
                     )
+                cited_ids = {c.chunk_id for c in cited}
+                valid_ids = {s.chunk_id for s in sources}
+                if not cited_ids or not cited_ids <= valid_ids:
+                    raise ValueError("Invalid answer citations")
+                ai_answer = raw_ans
+                mode = "ai"
+                cited_sources = [s for s in sources if s.chunk_id in cited_ids]
             except (AIUnavailable, ValueError) as error:
                 reason = error.reason if isinstance(error, AIUnavailable) else "format"
-                status = "ai_unavailable"
-                answer = ""
-                message = _AI_ISSUES.get(reason, "Dịch vụ AI tạm thời không phản hồi.")
-                message += " Bạn vẫn có thể xem các nguồn PDF đã tìm được bên dưới."
-        else:
-            answer = self._synthesize_answer(sources, multipart=not contextual and len(query_parts(query)) > 1)
+                is_local = (model_provider == "local") or getattr(ai_config, "is_local", False)
+                if is_local and model_name != "lookup":
+                    response_status = "ai_unavailable"
+                    mode = "ai"
+                    response_message = (
+                        "Không thể kết nối đến máy chủ Local Model (Ollama tại http://127.0.0.1:11434). "
+                        'Hãy khởi động Ollama và bảo đảm mô hình đã chọn đã được tải về, hoặc chọn "Tra cứu giáo trình (Offline)" trên thanh công cụ.'
+                    )
+                    if reason == "model":
+                        response_message = (
+                            f"Ollama chưa có mô hình {ai_config.model}. "
+                            'Chọn một mô hình đã cài hoặc dùng "Tra cứu giáo trình (Offline)".'
+                        )
+                    elif reason == "format":
+                        response_message = "Mô hình Ollama trả định dạng hoặc trích dẫn chưa hợp lệ. Bạn có thể xem các đoạn nguồn bên dưới."
+                    ai_answer = ""
+                else:
+                    provider_label = "Gemini" if model_provider == "gemini" else ("ChatGPT" if model_provider == "chatgpt" else "AI")
+                    response_message = {
+                        "credentials": f"Dịch vụ {provider_label} từ chối API Key hoặc quyền truy cập. Vui lòng kiểm tra lại API Key.",
+                        "model": f"Mô hình {provider_label} đã cấu hình chưa khả dụng.",
+                        "quota": f"Tài khoản {provider_label} đang hết hạn mức (Quota exceeded) hoặc bị giới hạn số lượt gọi.",
+                        "format": "AI trả phản hồi chưa đúng định dạng hoặc trích dẫn không hợp lệ.",
+                        "network": f"Kết nối tới {provider_label} bị gián đoạn hoặc quá thời gian chờ.",
+                    }.get(reason, f"Dịch vụ {provider_label} tạm thời không phản hồi.")
+                    response_status = "ai_unavailable"
+                    response_message += " Bạn vẫn có thể xem các nguồn PDF đã tìm được bên dưới."
+                    mode = "ai"
+                    ai_answer = ""
+
+        if not ai_answer and response_status == "success":
+            ai_answer = self._synthesize_answer(query, sources)
+            mode = "lookup"
+
+        # Keep synthesized answer structure intact without destroying line breaks
+        formatted_answer = ai_answer
+        active_model = getattr(ai_config, "model", model_name) if mode == "ai" else "lookup"
 
         return ChatResponse(
-            status=status,
-            answer=readable_pdf_text(answer),
+            status=response_status,
+            answer=formatted_answer,
             mode=mode,
             context_question=context_question,
-            message=message,
-            sources=[_source_item(source) for source in sources],
+            message=response_message,
+            sources=[source_item(source) for source in cited_sources],
+            model_name=active_model,
+            model_provider=model_provider or "local",
         )

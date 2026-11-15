@@ -15,4 +15,11 @@ def post_chat(payload: ChatRequest, request: Request):
     if course_manager.get_course_documents(payload.course_id) is None:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    return course_manager.answer_question(payload.course_id, question, payload.previous_questions)
+    return course_manager.answer_question(
+        payload.course_id,
+        question,
+        payload.previous_questions,
+        model_provider=payload.model_provider,
+        model_name=payload.model_name,
+        api_key=payload.api_key,
+    )

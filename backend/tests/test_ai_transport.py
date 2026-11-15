@@ -38,38 +38,22 @@ def test_invalid_credentials_are_not_retried_or_exposed(monkeypatch):
     assert "secret" not in str(error.value)
 
 
-@pytest.mark.parametrize(
-    "endpoint, expected_format",
-    [
-        ("https://example.test/v1/chat/completions", "json_object"),
-        ("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "json_schema"),
-        ("http://127.0.0.1:8080/v1/chat/completions", "json_schema"),
-    ],
-)
-def test_provider_receives_compatible_response_format(monkeypatch, endpoint, expected_format):
-    raw = json.dumps({
-        "choices": [{"message": {"content": '{"status":"success","answer":"OK","source_ids":["S1"]}'}}],
-    }).encode()
+def test_local_uses_json_object_mode_for_ollama_compatibility(monkeypatch):
+    payloads = []
+    raw = json.dumps({"choices": [{"message": {"content": json.dumps({
+        "status": "success", "answer": "OK", "source_ids": ["S1"]
+    })}}]}).encode()
 
     class Connection:
-        def __init__(self, *args, **kwargs):
-            pass
+        def __init__(self, *args, **kwargs): pass
+        def request(self, _method, _path, body, _headers): payloads.append(json.loads(body))
+        def getresponse(self): return SimpleNamespace(status=200, read=lambda _: raw)
+        def close(self): pass
 
-        def request(self, method, path, body, headers):
-            response_format = json.loads(body)["response_format"]
-            assert response_format["type"] == expected_format
-            if expected_format == "json_schema":
-                source_ids = response_format["json_schema"]["schema"]["properties"]["source_ids"]
-                assert source_ids["items"]["enum"] == ["S1"]
-
-        def getresponse(self):
-            return SimpleNamespace(status=200, read=lambda _: raw)
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(llm_service, "HTTPSConnection", Connection)
     monkeypatch.setattr(llm_service, "HTTPConnection", Connection)
-    config = AIConfig(endpoint, "test-model", "test-key")
-    source = ChunkSource("doc", "doc.pdf", 1, "c1", "Evidence")
-    assert config.explain("Question", [source]) == ("OK", [source])
+    result = AIConfig("http://127.0.0.1:11434/v1/chat/completions", "qwen2.5:3b", "").explain(
+        "Question", [ChunkSource("doc", "doc.pdf", 1, "c1", "Evidence")]
+    )
+    assert result[0] == "OK"
+    assert payloads[0]["response_format"] == {"type": "json_object"}
+

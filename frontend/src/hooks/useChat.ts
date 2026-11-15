@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Course, DocumentInfo, Message } from '../types/api';
+import type { ChatResponse, Course, DocumentInfo, Message, ModelProvider } from '../types/api';
 import {
   ApiError,
   appendCourseDocuments,
   createCourse,
+  deleteCourse,
   fetchCourses,
   fetchCourseDocuments,
   sendChat,
   fetchServerConversations,
+  renameServerConversation,
+  renameCourse,
 } from '../services/api';
 import type { ConversationHistory } from '../services/conversations';
 import {
@@ -16,9 +19,8 @@ import {
   readHistory,
   saveHistory,
   deleteHistory,
-  renameHistory,
   successfulQuestions,
-  mergeConversation,
+  mergeMessages,
 } from '../services/conversations';
 
 type DocumentState = { courseId: string; documents: DocumentInfo[]; error?: string };
@@ -38,6 +40,23 @@ function makeMessage(message: Omit<Message, 'id' | 'timestamp'>): Message {
     id: crypto.randomUUID(),
     createdAt: now.getTime(),
     timestamp: now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+  };
+}
+
+function replyFromResponse(
+  response: ChatResponse, question: string, provider?: ModelProvider, modelName?: string,
+): Omit<Message, 'id' | 'timestamp'> {
+  return {
+    sender: 'assistant',
+    content: response.answer,
+    mode: response.mode,
+    provider: response.model_provider || provider,
+    model_name: response.model_name || modelName,
+    status: response.status,
+    sources: response.sources,
+    message: response.message,
+    contextQuestion: response.context_question ?? undefined,
+    retryQuestion: ['error', 'ai_unavailable'].includes(response.status) ? question : undefined,
   };
 }
 
@@ -113,10 +132,9 @@ export function useChat() {
             convMap.set(sConv.id, sConv);
             hasChanges = true;
           } else if (local.courseId === sConv.courseId) {
-            const merged = mergeConversation(local, sConv);
-            if (merged.updatedAt > local.updatedAt || merged.messages.length > local.messages.length
-              || merged.titleVersion !== local.titleVersion) {
-              convMap.set(sConv.id, merged);
+            const messages = mergeMessages(local.messages, sConv.messages);
+            if (sConv.updatedAt > local.updatedAt || messages.length > local.messages.length) {
+              convMap.set(sConv.id, { ...local, messages, updatedAt: Math.max(local.updatedAt, sConv.updatedAt) });
               hasChanges = true;
             }
           }
@@ -189,7 +207,13 @@ export function useChat() {
   const currentThread = activeConversation(history, selectedCourseId, threads);
   const activeConversationId = currentThread?.id ?? null;
 
-  async function sendQuestion(question: string) {
+  async function sendQuestion(
+    question: string,
+    modelProvider?: ModelProvider,
+    modelName?: string,
+    apiKey?: string,
+    prepared?: ChatResponse,
+  ) {
     const text = question.trim();
     const current = historyRef.current;
     if (!text || !canAsk || current.selectedCourseId !== selectedCourseId) return;
@@ -197,42 +221,44 @@ export function useChat() {
     if (thread && chatRequests.current.has(thread.id)) return;
 
     const id = thread?.id ?? crypto.randomUUID();
-    const controller = new AbortController();
-    const previousQuestions = successfulQuestions(thread?.messages ?? []);
     const questionMessage = makeMessage({ sender: 'user', content: text });
     const updated = {
       id,
       courseId: selectedCourseId,
       title: thread?.title ?? text.replace(/\s+/g, ' '),
-      titleVersion: thread?.titleVersion,
       updatedAt: Math.max(Date.now(), (thread?.updatedAt ?? 0) + 1),
       messages: [...(thread?.messages ?? []), questionMessage],
     };
-    chatRequests.current.set(id, controller);
-    setPendingConversations((previous) => new Set(previous).add(id));
+
+    if (prepared?.mode === 'lookup' && prepared.status === 'success') {
+      updated.messages.push(makeMessage({
+        ...replyFromResponse(prepared, text, modelProvider, modelName),
+        replyTo: questionMessage.id,
+      }));
+    }
     updateHistory((previous) => ({
       ...previous,
       activeByCourse: { ...previous.activeByCourse, [selectedCourseId]: id },
       conversations: [updated, ...previous.conversations.filter((item) => item.id !== id)],
     }));
+    if (prepared?.mode === 'lookup' && prepared.status === 'success') return;
 
+    const controller = new AbortController();
+    const previousQuestions = successfulQuestions(thread?.messages ?? []);
+    chatRequests.current.set(id, controller);
+    setPendingConversations((previous) => new Set(previous).add(id));
     try {
       const response = await sendChat({
         course_id: selectedCourseId,
         question: text,
+        model_provider: modelProvider,
+        model_name: modelName,
+        api_key: apiKey,
         ...(previousQuestions.length > 0 ? { previous_questions: previousQuestions } : {}),
       }, controller.signal);
       if (controller.signal.aborted) return;
       setCatalogStatus('online');
-      appendReply(id, questionMessage.id, {
-        sender: 'assistant',
-        content: response.answer,
-        status: response.status,
-        sources: response.sources,
-        message: response.message,
-        contextQuestion: response.context_question ?? undefined,
-        retryQuestion: response.status === 'error' || response.status === 'ai_unavailable' ? text : undefined,
-      });
+      appendReply(id, questionMessage.id, replyFromResponse(response, text, modelProvider, modelName));
     } catch (error) {
       if (controller.signal.aborted) return;
       if (isConnectionError(error)) setCatalogStatus('offline');
@@ -258,6 +284,29 @@ export function useChat() {
     } catch (error) {
       if (isConnectionError(error)) setCatalogStatus('offline');
       throw error;
+    }
+  }
+
+  async function updateCourseName(courseId: string, name: string) {
+    const updated = await renameCourse(courseId, name);
+    setCourses((previous) => previous.map((course) => course.course_id === courseId
+      ? { ...course, course_name: updated.course_name }
+      : course));
+  }
+
+  async function removeCourse(courseId: string) {
+    await deleteCourse(courseId);
+    const affected = conversationsForCourse(historyRef.current, courseId).map(({ id }) => id);
+    affected.forEach((id) => chatRequests.current.get(id)?.abort());
+    setPendingConversations((previous) => {
+      const next = new Set(previous);
+      affected.forEach((id) => next.delete(id));
+      return next;
+    });
+    setCourses((previous) => previous.filter((course) => course.course_id !== courseId));
+    if (historyRef.current.selectedCourseId === courseId) {
+      const remaining = courses.filter((course) => course.course_id !== courseId);
+      selectCourse((remaining.find((course) => course.document_count > 0) ?? remaining[0])?.course_id ?? '');
     }
   }
 
@@ -320,15 +369,16 @@ export function useChat() {
     }
   }
 
-  async function renameConversation(id: string, title: string) {
-    if (!historyRef.current.conversations.some((thread) => thread.id === id)) {
-      throw new Error('Không tìm thấy hội thoại.');
-    }
-    const renamed = await renameHistory(id, title);
+  async function renameConversation(id: string, newTitle: string) {
+    const trimmed = newTitle.trim();
+    if (!trimmed) return;
     updateHistory((current) => ({
       ...current,
-      conversations: current.conversations.map((item) => item.id === id ? mergeConversation(item, renamed) : item),
-    }), 'local');
+      conversations: current.conversations.map((thread) =>
+        thread.id === id ? { ...thread, title: trimmed } : thread
+      ),
+    }));
+    await renameServerConversation(id, trimmed);
   }
 
   return {
@@ -355,5 +405,7 @@ export function useChat() {
     onSendQuestion: sendQuestion,
     onAddCourse: addCourse,
     onAddDocuments: addDocuments,
+    onRenameCourse: updateCourseName,
+    onDeleteCourse: removeCourse,
   };
 }
