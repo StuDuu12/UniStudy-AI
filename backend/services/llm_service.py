@@ -139,6 +139,7 @@ class AIConfig:
         answer_style: AnswerStyle = "auto",
         context_question: str | None = None,
         page_images: Mapping[str, bytes] | None = None,
+        require_inline_citations: bool = False,
     ) -> tuple[str, list[ChunkSource]]:
         evidence = {f"S{index}": source for index, source in enumerate(sources, start=1)}
         content = {
@@ -186,8 +187,11 @@ class AIConfig:
             raise ValueError("Unknown source ID")
         ordered_ids = list(dict.fromkeys(source_ids))
         citation_numbers = {key: number for number, key in enumerate(ordered_ids, 1)}
-        if set(INLINE_CITATION.findall(answer)) - citation_numbers.keys():
+        inline_ids = set(INLINE_CITATION.findall(answer))
+        if inline_ids - citation_numbers.keys():
             raise ValueError("Unknown inline citation")
+        if require_inline_citations and citation_numbers.keys() - inline_ids:
+            raise ValueError("Missing inline citation")
         answer = INLINE_CITATION.sub(lambda match: f"[{citation_numbers[match[1]]}]", answer)
         return answer.strip(), [evidence[key] for key in ordered_ids]
 

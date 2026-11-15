@@ -9,6 +9,7 @@ __pycache__/
 data/local_course_pdfs/
 data/index/
 data/conversations.json
+data/study_progress.sqlite3*
 /.agents/
 /Ho_so_UniStuAI_cap_nhat/
 /K73E1 - Đội 1_C/

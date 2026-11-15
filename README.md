@@ -118,6 +118,16 @@ Mỗi lượt nhận tối đa 5 PDF có văn bản, mỗi tệp tối đa 20 MB
 
 Chế độ **Tra cứu giáo trình (Offline)** hiển thị đoạn trích từ PDF trên máy. Khi mô hình gặp lỗi, bấm **Tra cứu giáo trình cho câu này** để xem đoạn trích. Chọn Ollama để xử lý học liệu trên máy, hoặc chỉ dùng Gemini và ChatGPT với học liệu được phép gửi đến dịch vụ đó.
 
+### Học cùng AI
+
+1. Chọn **Kiểm thử phần mềm** rồi mở **Học cùng AI**. Hai bài minh họa là **Phân vùng tương đương** và **Phân tích giá trị biên**.
+2. Trả lời câu kiểm tra ban đầu hoặc bấm **Xem giải thích trước**. Mỗi bài có phản hồi theo lỗi, ví dụ minh họa và nút mở đúng trang giáo trình.
+3. Bấm **Tự làm bài mới**. Bạn có thể mở hai gợi ý theo thứ tự, hoặc xem lời giải sau khi thử. Bài làm đúng ở lần đầu và chưa mở gợi ý được ghi là **Đã tự làm đúng**. Bấm **Ôn với dữ kiện khác** để tiếp tục.
+
+Luồng bài học cơ bản dùng phần giải thích soạn sẵn và chấm theo quy tắc của bài tập. Nút **Giải thích thêm với AI** dùng cấu hình máy chủ trong tệp `.env` theo mẫu `.env.example`. Đặt `UNISTUDY_AI_ENDPOINT`, `UNISTUDY_AI_MODEL` và `UNISTUDY_AI_API_KEY` của dịch vụ tương thích Chat Completions, sau đó khởi động lại backend. Tính năng này gửi trang học liệu minh họa được cấp phép và phản hồi chẩn đoán đã chuẩn hóa. Khi dịch vụ AI lỗi, sinh viên vẫn có thể tiếp tục làm bài.
+
+Tiến độ được lưu ở `data/study_progress.sqlite3`. Trình duyệt giữ mã phiên theo học phần và chủ đề để lần sau mở lại đúng bước.
+
 ### Lịch sử hội thoại và câu hỏi nối tiếp
 
 Chọn học phần rồi mở một cuộc trò chuyện trong **Lịch sử hội thoại** ở thanh bên. **Hội thoại mới** mở một cuộc trò chuyện trống và giữ các cuộc trước đó. Tên hội thoại lấy từ câu hỏi đầu tiên. Ứng dụng lưu lịch sử vào `data/conversations.json` trên máy chủ cục bộ và giữ một bản sao trong trình duyệt.
@@ -136,6 +146,8 @@ Ví dụ, sau khi hỏi “Phân vùng tương đương là gì?”, bạn có t
 | `GET` | `/api/courses/{course_id}/documents` | Danh sách tài liệu và số trang của học phần |
 | `POST` | `/api/courses/{course_id}/documents` | Bổ sung các tệp `files` dạng multipart cho học phần |
 | `POST` | `/api/chat` | Tra cứu `question` trong học phần `course_id`, với `previous_questions` tùy chọn gồm tối đa ba câu trước theo thứ tự thời gian |
+| `GET` | `/api/study/{course_id}` | Liệt kê bài học có học liệu minh họa |
+| `POST` | `/api/study/{course_id}/{topic_id}` | Mở hoặc tiếp tục phiên học bằng thao tác, mã phiên và phiên bản tiến độ |
 | `GET` | `/api/documents/{document_id}/page/{page}` | Xem ảnh trích xuất của trang PDF tương ứng |
 | `GET` | `/api/documents/{document_id}` | Tải tệp PDF tài liệu gốc |
 
@@ -144,9 +156,21 @@ Ví dụ, sau khi hỏi “Phân vùng tương đương là gì?”, bạn có t
 ## 6. Chạy kiểm thử tự động (Pytest)
 
 ```powershell
-# Kiểm thử toàn bộ Backend API
-.\.venv\Scripts\python.exe -m pytest backend/tests/test_api.py -v
+# Kiểm thử toàn bộ FastAPI, dịch vụ và Streamlit dự phòng
+.\.venv\Scripts\python.exe -m pytest backend/tests tests -q
 
-# Kiểm thử các dịch vụ core & Streamlit dự phòng
-.\.venv\Scripts\python.exe -m pytest tests/ -v
+# Chạy riêng các tình huống Học cùng AI
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_study.py -v
+```
+
+Để chạy lại bài thử giao diện, build frontend rồi dùng máy chủ kiểm thử dưới đây. Nó phục vụ app với học liệu minh họa, tiến độ tạm và API mô phỏng có trích dẫn.
+
+```powershell
+# Cửa sổ thứ nhất
+.\.venv\Scripts\python.exe -m tests.browser.study_server
+
+# Cửa sổ thứ hai, dùng một phiên trình duyệt thử nghiệm mới
+playwright-cli -s=unistudy-test open http://127.0.0.1:18173 --browser=msedge
+playwright-cli -s=unistudy-test run-code --filename=tests/browser/study.js
+playwright-cli -s=unistudy-test close
 ```

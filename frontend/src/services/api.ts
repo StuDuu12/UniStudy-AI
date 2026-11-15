@@ -8,6 +8,7 @@ import type {
   Source,
 } from '../types/api';
 import type { Conversation } from './conversations';
+import type { StudyAction, StudyCatalog, StudyTurn } from '../types/study';
 
 const API_BASE = '/api';
 
@@ -53,6 +54,27 @@ export async function sendChat(
   });
 
   return readResponse<ChatResponse>(response, 'Không thể gửi câu hỏi');
+}
+
+export async function fetchStudyCatalog(courseId: string, signal: AbortSignal): Promise<StudyCatalog> {
+  const response = await fetch(API_BASE + '/study/' + encodeURIComponent(courseId), { signal });
+  return readResponse(response, 'Không thể tải bài học');
+}
+
+export async function sendStudyTurn(
+  courseId: string,
+  topicId: string,
+  payload: { action: StudyAction; session_id?: string | null; revision?: number | null; answer?: string },
+  signal: AbortSignal,
+): Promise<StudyTurn> {
+  const path = [courseId, topicId].map(encodeURIComponent).join('/');
+  const response = await fetch(API_BASE + '/study/' + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  return readResponse(response, 'Không thể tiếp tục bài học');
 }
 
 async function readResponse<T>(response: Response, failure: string): Promise<T> {

@@ -11,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.routers import chat, courses, documents, conversations
+from backend.routers import chat, courses, documents, conversations, study
 from backend.services.course_manager import CourseManager
 
 app = FastAPI(
@@ -50,6 +50,7 @@ app.include_router(courses.router, prefix="/api", tags=["courses"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(documents.router, prefix="/api", tags=["documents"])
 app.include_router(conversations.router, prefix="/api", tags=["conversations"])
+app.include_router(study.router, prefix="/api")
 
 # Serve frontend static assets if built
 frontend_dist = PROJECT_ROOT / "frontend" / "dist"

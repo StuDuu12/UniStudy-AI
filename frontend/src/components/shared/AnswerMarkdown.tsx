@@ -5,13 +5,16 @@ import rehypeKatex from 'rehype-katex';
 interface AnswerMarkdownProps {
   text: string;
   sourceLayout?: boolean;
+  disableLinksAndImages?: boolean;
 }
 
-export function AnswerMarkdown({ text, sourceLayout }: AnswerMarkdownProps) {
+export function AnswerMarkdown({ text, sourceLayout, disableLinksAndImages }: AnswerMarkdownProps) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkMath]}
       rehypePlugins={[rehypeKatex]}
+      disallowedElements={disableLinksAndImages ? ['a', 'img'] : undefined}
+      unwrapDisallowed={disableLinksAndImages}
       components={{
         h2: ({ children }) => (
           <h2 className="mt-4 mb-2 border-b border-slate-100 pb-1 text-base font-bold text-slate-900">{children}</h2>

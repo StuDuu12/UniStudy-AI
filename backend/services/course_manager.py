@@ -423,6 +423,21 @@ class CourseManager:
     def get_document_info(self, document_id: str) -> DocumentInfo | None:
         return self._catalog.document_map.get(document_id)
 
+    @property
+    def ai_config(self) -> AIConfig | None:
+        return self._ai
+
+    def get_demo_page_chunks(self, course_id: str, document_id: str, page: int) -> list[ChunkSource]:
+        catalog = self._catalog
+        retriever = catalog.retrievers.get(course_id)
+        document = catalog.document_map.get(document_id)
+        if not retriever or not document or document.license != "project_demo":
+            return []
+        return [
+            chunk for chunk in retriever.chunks
+            if chunk.document_id == document_id and chunk.page == page
+        ]
+
     def get_formatted_excerpt(self, document_id: str, page: int, chunk_id: str, digest: str) -> str | None:
         for retriever in self._catalog.retrievers.values():
             for chunk in retriever.chunks:
