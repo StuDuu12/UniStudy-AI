@@ -11,21 +11,27 @@ async (page) => {
   const topic = (name) => studyRegion.getByRole('button', { name: new RegExp('^' + name) }).click();
   const text = (value) => page.getByText(value).first().waitFor({ state: 'visible' });
   const answer = page.getByRole('textbox', { name: 'Câu trả lời của bạn' });
+  const prompt = studyRegion.locator('#study-prompt');
   const course = page.locator('aside').getByRole('combobox');
-  const chooseTesting = () => course.selectOption('software_testing');
+  const chooseMath = () => course.selectOption('toan_roi_rac');
+  const chooseRequirements = () => course.selectOption('thu_thap_phan_tich_yeu_cau');
+  const mathLesson = 'Phép hợp và phép giao';
+  const requirementsLesson = 'Yêu cầu chức năng và phi chức năng';
+  const mathTurn = '**/api/study/toan_roi_rac/union';
+  const completedMathLesson = studyRegion.getByRole('button', { name: /^Phép hợp và phép giao.*Đã tự làm đúng/ });
 
   async function submit(values) {
     await answer.fill(values);
     await button('Kiểm tra câu trả lời').click();
   }
 
-  await chooseTesting();
+  await chooseMath();
   const draft = page.getByRole('textbox', { name: 'Câu hỏi', exact: true });
   await draft.fill('Bản nháp thử chế độ học');
   await tab();
   await button('Hỏi đáp').click();
   if (await draft.inputValue() !== 'Bản nháp thử chế độ học') throw new Error('Q&A draft was lost');
-  const question = 'Phân vùng tương đương là gì?';
+  const question = 'Phép hợp và phép giao khác nhau thế nào?';
   await draft.fill(question);
   await button('Gửi câu hỏi').click();
   const savedChat = page.locator('aside').getByText(question, { exact: true }).first();
@@ -38,9 +44,8 @@ async (page) => {
   console.log('UI-01 · Giữ bản nháp khi đổi chế độ và mở lại Hỏi đáp từ lịch sử.');
 
   await tab();
-  await topic('Phân vùng tương đương');
-  const firstResponsePattern = '**/api/study/software_testing/equivalence';
-  await page.route(firstResponsePattern, async (route) => {
+  await topic(mathLesson);
+  await page.route(mathTurn, async (route) => {
     if (route.request().postDataJSON()?.action === 'submit') {
       const serverReply = await route.fetch();
       if (!serverReply.ok()) throw new Error('First study attempt was not committed');
@@ -49,96 +54,94 @@ async (page) => {
       await route.continue();
     }
   });
-  await submit('21, 24, 28');
+  await submit('4');
   await page.getByRole('alert').getByText(/Mất kết nối/).waitFor({ state: 'visible' });
-  await page.unroute(firstResponsePattern);
+  await page.unroute(mathTurn);
   await page.reload();
-  await chooseTesting();
+  await chooseMath();
   await tab();
-  await topic('Phân vùng tương đương');
-  await text(/cùng một lớp/);
+  await topic(mathLesson);
+  await studyRegion.getByRole('status').filter({ hasText: 'phần giao' }).waitFor({ state: 'visible' });
   console.log('UI-08 · Khôi phục bước giải thích khi mất phản hồi của lần nộp đầu.');
 
-  await button('Phân vùng tương đương · Trang PDF 2').click();
-  await page.getByRole('img', { name: 'Tài liệu software_testing.pdf - Trang 2' }).waitFor({ state: 'visible' });
+  await button(mathLesson + ' · Trang PDF 1').click();
+  await page.getByRole('img', { name: 'Tài liệu discrete_math_study.pdf - Trang 1' }).waitFor({ state: 'visible' });
   await page.waitForFunction(() => {
-    const image = document.querySelector('img[alt="Tài liệu software_testing.pdf - Trang 2"]');
+    const image = document.querySelector('img[alt="Tài liệu discrete_math_study.pdf - Trang 1"]');
     return image && image.complete && image.naturalWidth > 0;
   });
   const pdfLink = await page.getByRole('link', { name: 'Mở tab mới' }).getAttribute('href');
-  if (!pdfLink?.endsWith('/testing_basics#page=2')) throw new Error('PDF did not open on page 2');
+  if (!pdfLink?.endsWith('/discrete_math_study#page=1')) throw new Error('PDF did not open on page 1');
   await button('Đóng').click();
   console.log('UI-02 · Mở trình xem PDF từ trang nguồn của lời giải thích.');
 
   const ai = button('Giải thích thêm với AI');
-  const canTestAI = await ai.isVisible();
-  if (canTestAI) {
-    await ai.click();
-    await page.getByRole('heading', { name: 'Giải thích thêm của AI' }).waitFor({ state: 'visible', timeout: 120000 });
-    await button('[1] Trang PDF 2').waitFor({ state: 'visible' });
-    console.log('UI-03 · Hiển thị lời giải thích AI có nút mở trang nguồn.');
+  await ai.click();
+  await page.getByRole('heading', { name: 'Giải thích thêm của AI' }).waitFor({ state: 'visible', timeout: 120000 });
+  await text(/vì sao số 0 thuộc phép hợp/);
+  await button('[1] Trang PDF 1').waitFor({ state: 'visible' });
+  console.log('UI-03 · Hiển thị lời giải thích AI có nút mở trang nguồn.');
 
-    const routePattern = '**/api/study/software_testing/equivalence';
-    let finishDelay;
-    const delay = new Promise((resolve) => { finishDelay = resolve; });
-    await page.route(routePattern, async (route) => {
-      if (route.request().postDataJSON()?.action === 'ai') {
-        await delay;
-        await route.abort().catch(() => {});
-      } else {
-        await route.continue();
-      }
-    });
-    try {
-      await ai.click();
-      await text(/Đang tạo giải thích/);
-      await button('Tự làm bài mới').click({ timeout: 3000 });
-      await text(/5 đến 12/);
-      console.log('UI-04 · Chuyển sang tự làm khi AI đang chờ phản hồi.');
-    } finally {
-      finishDelay();
-      await page.unroute(routePattern);
+  let finishDelay;
+  const delay = new Promise((resolve) => { finishDelay = resolve; });
+  await page.route(mathTurn, async (route) => {
+    if (route.request().postDataJSON()?.action === 'ai') {
+      await delay;
+      await route.abort().catch(() => {});
+    } else {
+      await route.continue();
     }
-  } else {
-    await button('Tự làm bài mới').click();
-    console.log('UI-03 và UI-04 · Bỏ qua vì máy chủ chưa cấu hình AI.');
+  });
+  try {
+    await ai.click();
+    await text(/Đang tạo giải thích/);
+    await button('Tự làm bài mới').click({ timeout: 3000 });
+    await prompt.filter({ hasText: 'A = {-3, 2, 5} và B = {2, 6}' }).waitFor({ state: 'visible' });
+    console.log('UI-04 · Chuyển sang tự làm khi AI đang chờ phản hồi.');
+  } finally {
+    finishDelay();
+    await page.unroute(mathTurn);
   }
 
-  await submit('4.5 7 13');
+  await submit('-3.5 2 5 6');
   await page.getByRole('alert').getByText(/Nhập các số nguyên/).waitFor({ state: 'visible' });
 
-  await page.route('**/api/study/software_testing/equivalence', (route) => route.abort());
-  await submit('4 7 13');
+  await page.route(mathTurn, (route) => route.abort());
+  await submit('-3 2 5 6');
   await page.getByRole('alert').getByText(/Mất kết nối/).waitFor({ state: 'visible' });
-  if (await answer.inputValue() !== '4 7 13') throw new Error('Study response was lost on network failure');
-  await page.unroute('**/api/study/software_testing/equivalence');
+  if (await answer.inputValue() !== '-3 2 5 6') throw new Error('Study response was lost on network failure');
+  await page.unroute(mathTurn);
   await button('Kiểm tra câu trả lời').click();
   await page.getByRole('heading', { name: 'Đã tự làm đúng' }).waitFor({ state: 'visible' });
   console.log('UI-05 · Từ chối số thập phân, giữ câu trả lời qua mất mạng, gửi lại thành công.');
 
   await page.reload();
-  await chooseTesting();
+  await chooseMath();
   await tab();
-  await page.getByRole('button', { name: /^Phân vùng tương đương.*Đã tự làm đúng/ }).waitFor({ state: 'visible' });
-  await topic('Phân vùng tương đương');
+  await completedMathLesson.waitFor({ state: 'visible' });
+  await topic(mathLesson);
   await page.getByRole('heading', { name: 'Đã tự làm đúng' }).waitFor({ state: 'visible' });
   await button('Ôn với dữ kiện khác').click();
-  await text(/3 đến 9/);
+  await prompt.filter({ hasText: 'A = {2, 9} và B = {-2, 9, 11}' }).waitFor({ state: 'visible' });
   await button('Các bài học').click();
-  await course.selectOption('algorithm_analysis');
-  await text(/Chọn học phần Kiểm thử phần mềm/);
-  await chooseTesting();
-  await page.getByRole('button', { name: /^Phân vùng tương đương.*Đã tự làm đúng/ }).waitFor({ state: 'visible' });
+  await chooseRequirements();
+  await studyRegion.getByRole('button', { name: /^Yêu cầu chức năng và phi chức năng.*Chưa bắt đầu/ }).waitFor({ state: 'visible' });
+  await completedMathLesson.waitFor({ state: 'hidden' });
+  await chooseMath();
+  await completedMathLesson.waitFor({ state: 'visible' });
   console.log('UI-06 · Khôi phục và tách tiến độ theo học phần, ôn lại với dữ kiện khác.');
 
+  await chooseRequirements();
   await page.setViewportSize({ width: 390, height: 844 });
-  await topic('Phân tích giá trị biên');
+  await topic(requirementsLesson);
   await button('Xem giải thích trước').click();
+  await button(requirementsLesson + ' · Trang PDF 1').waitFor({ state: 'visible' });
   await button('Tự làm bài mới').click();
+  await prompt.filter({ hasText: 'Một ứng dụng quản lý phòng học' }).waitFor({ state: 'visible' });
   await button('Xem gợi ý').click();
   await button('Gợi ý tiếp theo').click();
-  await text(/cộng và trừ 1/);
-  await submit('0 1 2 9 10 11');
+  await studyRegion.getByRole('status').filter({ hasText: 'hành động' }).waitFor({ state: 'visible' });
+  await submit('2 4');
   await page.getByRole('heading', { name: 'Cần luyện thêm' }).waitFor({ state: 'visible' });
   const hasOverflow = await page.getByRole('region', { name: 'Học cùng AI' }).evaluate((region) =>
     region.scrollWidth > region.clientWidth || document.documentElement.scrollWidth > innerWidth);

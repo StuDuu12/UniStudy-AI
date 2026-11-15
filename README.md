@@ -120,13 +120,15 @@ Chế độ **Tra cứu giáo trình (Offline)** hiển thị đoạn trích t�
 
 ### Học cùng AI
 
-1. Chọn **Kiểm thử phần mềm** rồi mở **Học cùng AI**. Hai bài minh họa là **Phân vùng tương đương** và **Phân tích giá trị biên**.
+1. Mở **Học cùng AI** ở một trong hai học phần Chung kết. **Toán rời rạc** có bài **Phép hợp và phép giao**. **Thu thập và phân tích yêu cầu** có bài **Yêu cầu chức năng và phi chức năng**.
 2. Trả lời câu kiểm tra ban đầu hoặc bấm **Xem giải thích trước**. Mỗi bài có phản hồi theo lỗi, ví dụ minh họa và nút mở đúng trang giáo trình.
 3. Bấm **Tự làm bài mới**. Bạn có thể mở hai gợi ý theo thứ tự, hoặc xem lời giải sau khi thử. Bài làm đúng ở lần đầu và chưa mở gợi ý được ghi là **Đã tự làm đúng**. Bấm **Ôn với dữ kiện khác** để tiếp tục.
 
 Luồng bài học cơ bản dùng phần giải thích soạn sẵn và chấm theo quy tắc của bài tập. Nút **Giải thích thêm với AI** dùng cấu hình máy chủ trong tệp `.env` theo mẫu `.env.example`. Đặt `UNISTUDY_AI_ENDPOINT`, `UNISTUDY_AI_MODEL` và `UNISTUDY_AI_API_KEY` của dịch vụ tương thích Chat Completions, sau đó khởi động lại backend. Tính năng này gửi trang học liệu minh họa được cấp phép và phản hồi chẩn đoán đã chuẩn hóa. Khi dịch vụ AI lỗi, sinh viên vẫn có thể tiếp tục làm bài.
 
 Tiến độ được lưu ở `data/study_progress.sqlite3`. Trình duyệt giữ mã phiên theo học phần và chủ đề để lần sau mở lại đúng bước.
+
+Cấu hình Gemini đã thử cho cả hai bài dùng `UNISTUDY_AI_MODEL=gemini-3.1-flash-lite` và `UNISTUDY_AI_ENDPOINT=https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`. Điền khóa của bạn vào `UNISTUDY_AI_API_KEY` trong tệp `.env` cục bộ.
 
 ### Lịch sử hội thoại và câu hỏi nối tiếp
 

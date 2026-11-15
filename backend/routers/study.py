@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import ValidationError
 
 from backend.schemas.study import StudyCatalog, StudyState, StudyTurn, StudyTurnRequest
-from backend.services.study import LESSONS, STUDY_COURSE, STUDY_DOCUMENT, InvalidStudyAction, study_turn
+from backend.services.study import LESSONS, InvalidStudyAction, study_turn
 from backend.services.study_progress import StaleStudyProgress, StudyProgress
 
 
@@ -18,20 +18,20 @@ def get_study_catalog(course_id: str, request: Request):
     manager = request.app.state.course_manager
     if manager.get_course_documents(course_id) is None:
         raise HTTPException(404, "Không tìm thấy học phần.")
-    topics = [
-        lesson.topic for lesson in LESSONS.values()
-        if manager.get_demo_page_chunks(course_id, STUDY_DOCUMENT, lesson.topic.page)
-    ] if course_id == STUDY_COURSE else []
+    lesson = LESSONS.get(course_id)
+    topics = [lesson.topic] if lesson and manager.get_demo_page_chunks(
+        course_id, lesson.document_id, lesson.topic.page,
+    ) else []
     return StudyCatalog(topics=topics, ai_configured=manager.ai_config is not None)
 
 
 @router.post("/{course_id}/{topic_id}", response_model=StudyTurn)
 def post_study_turn(course_id: str, topic_id: str, payload: StudyTurnRequest, request: Request):
     manager = request.app.state.course_manager
-    lesson = LESSONS.get(topic_id) if course_id == STUDY_COURSE else None
-    if lesson is None:
+    lesson = LESSONS.get(course_id)
+    if lesson is None or lesson.topic.id != topic_id:
         raise HTTPException(404, "Học phần chưa có bài học này.")
-    chunks = manager.get_demo_page_chunks(course_id, STUDY_DOCUMENT, lesson.topic.page)
+    chunks = manager.get_demo_page_chunks(course_id, lesson.document_id, lesson.topic.page)
     if not chunks:
         raise HTTPException(404, "Không tìm thấy trang học liệu của bài học.")
 

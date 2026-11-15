@@ -212,7 +212,7 @@ export function StudySession({ courseId, topic, initialProgress, aiConfigured, o
 
         {turn?.prompt && (
           <form onSubmit={submit} className="space-y-3">
-            <p id="study-prompt" className="text-base font-medium leading-relaxed text-slate-900">{turn.prompt}</p>
+            <p id="study-prompt" className="whitespace-pre-line text-base font-medium leading-relaxed text-slate-900">{turn.prompt}</p>
             <label htmlFor="study-answer" className="block font-medium">Câu trả lời của bạn</label>
             <input
               autoComplete="off"

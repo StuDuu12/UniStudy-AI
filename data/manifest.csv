@@ -1,3 +1,5 @@
 course_id,document_id,document_name,path,license
 software_testing,testing_basics,software_testing.pdf,demo_licensed/software_testing.pdf,project_demo
 algorithm_analysis,algorithm_basics,algorithm_analysis.pdf,demo_licensed/algorithm_analysis.pdf,project_demo
+toan_roi_rac,discrete_math_study,discrete_math_study.pdf,demo_licensed/discrete_math_study.pdf,project_demo
+thu_thap_phan_tich_yeu_cau,requirements_study,requirements_study.pdf,demo_licensed/requirements_study.pdf,project_demo

@@ -2,7 +2,7 @@ import type { Source } from './api';
 
 export type StudyStep = 'diagnose' | 'explain' | 'practice' | 'review';
 export type StudyAction = 'open' | 'view' | 'submit' | 'explain' | 'practice' | 'hint' | 'solution' | 'retry' | 'ai';
-type StudyMistake = 'one_partition' | 'missing_partition' | 'only_endpoints' | 'missing_neighbors' | 'extra_values';
+type StudyMistake = 'confuses_intersection' | 'confuses_nonfunctional' | 'incomplete' | 'wrong_values' | 'extra_values';
 
 export interface StudyState {
   step: StudyStep;

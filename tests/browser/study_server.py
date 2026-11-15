@@ -28,8 +28,9 @@ class StudyModel(BaseHTTPRequestHandler):
         reply = {
             "status": "success",
             "answer": (
-                "Hãy chia đầu vào theo cách hệ thống xử lý [S1]. "
-                "Ví dụ, ô số chỗ nhận từ 22 đến 32. Nếu nhập 21, ô sẽ xử lý thế nào?"
+                "Phép hợp lấy mọi phần tử xuất hiện trong ít nhất một tập. "
+                "Phép giao chỉ lấy các phần tử có mặt trong cả hai tập [S1]. "
+                "Với A = {0, 3} và B = {3, 10}, vì sao số 0 thuộc phép hợp nhưng không thuộc phép giao?"
             ),
             "source_ids": ["S1"],
         }

@@ -7,7 +7,7 @@ from backend.schemas.chat import SourceItem
 
 StudyAction = Literal["open", "view", "submit", "explain", "practice", "hint", "solution", "retry", "ai"]
 StudyStep = Literal["diagnose", "explain", "practice", "review"]
-StudyMistake = Literal["one_partition", "missing_partition", "only_endpoints", "missing_neighbors", "extra_values"]
+StudyMistake = Literal["confuses_intersection", "confuses_nonfunctional", "incomplete", "wrong_values", "extra_values"]
 StudyResult = Literal["independent", "needs_practice"]
 StudyAIStatus = Literal["used", "not_configured", "unavailable", "insufficient_evidence"]
 

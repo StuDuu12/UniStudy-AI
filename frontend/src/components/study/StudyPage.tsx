@@ -132,7 +132,7 @@ export function StudyPage({ courseId, onOpenPdf }: { courseId: string; onOpenPdf
               </div>
             ) : !courseId || catalog?.topics.length === 0 ? (
               <p className="mt-5 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-                Chọn học phần Kiểm thử phần mềm để mở các bài học minh họa.
+                Chọn Toán rời rạc hoặc Thu thập và phân tích yêu cầu để mở bài học minh họa.
               </p>
             ) : !catalog ? (
               <p role="status" className="mt-5 text-sm text-slate-600">Đang tải bài học…</p>

@@ -7,94 +7,134 @@ from backend.services.ingest import ChunkSource
 from backend.services.llm_service import AIConfig, AIUnavailable
 
 
-STUDY_COURSE = "software_testing"
-STUDY_DOCUMENT = "testing_basics"
-
 _MISTAKES: dict[StudyMistake, str] = {
-    "one_partition": "Các giá trị bạn chọn cùng một lớp. Hãy xét lần lượt dưới khoảng, trong khoảng và trên khoảng cho phép.",
-    "missing_partition": "Bạn chưa phủ đủ ba lớp. Hãy xét riêng dưới khoảng, trong khoảng và trên khoảng.",
-    "only_endpoints": "Bạn đã tìm đúng hai đầu mút. Hãy kiểm tra thêm các giá trị kề mỗi đầu mút ở cả hai phía.",
-    "missing_neighbors": "Bạn còn thiếu giá trị đúng biên hoặc kề biên. Hãy xét ngay trước, tại và ngay sau mỗi đầu mút.",
-    "extra_values": "Bạn đã phủ các trường hợp cần thiết. Hãy bỏ giá trị lặp hoặc dư để còn đúng số giá trị được hỏi.",
+    "confuses_intersection": "Bạn đang lấy phần giao. Phép hợp giữ cả phần tử chỉ thuộc một tập.",
+    "confuses_nonfunctional": (
+        "Bạn đang chọn các yêu cầu phi chức năng. Hãy tìm các hành động hoặc dịch vụ hệ thống cung cấp."
+    ),
+    "incomplete": "Các lựa chọn hiện tại đều đúng nhưng chưa đủ. Hãy kiểm tra lại dữ kiện còn bỏ sót.",
+    "wrong_values": "Có giá trị hoặc lựa chọn chưa phù hợp. Hãy kiểm tra lại từng mục theo quy tắc trong bài.",
+    "extra_values": "Bạn đã tìm đủ đáp án. Hãy bỏ các giá trị lặp hoặc dư.",
 }
 
 
 @dataclass(frozen=True)
 class Exercise:
-    field: str
-    lower: int
-    upper: int
-
-    def prompt(self, boundary: bool) -> str:
-        task = (
-            "Nhập sáu giá trị để kiểm thử cả hai biên theo bước 1."
-            if boundary else
-            "Nhập ba số đại diện, mỗi số thuộc một lớp tương đương khác nhau."
-        )
-        return (
-            f"Trường {self.field} chỉ chấp nhận số nguyên từ {self.lower} đến {self.upper}, "
-            f"tính cả hai đầu mút. {task}"
-        )
-
-    def answer(self, boundary: bool) -> tuple[int, ...]:
-        if boundary:
-            return (self.lower - 1, self.lower, self.lower + 1, self.upper - 1, self.upper, self.upper + 1)
-        return (self.lower - 1, self.lower, self.upper + 1)
+    prompt: str
+    answer: tuple[int, ...]
+    confused_answer: tuple[int, ...]
 
 
 @dataclass(frozen=True)
 class Lesson:
     topic: StudyTopic
+    document_id: str
+    misconception: StudyMistake
     diagnostic: Exercise
     exercises: tuple[Exercise, Exercise, Exercise]
     explanation: str
     hints: tuple[str, str]
 
 
+def _union(a: tuple[int, ...], b: tuple[int, ...]) -> Exercise:
+    left = ", ".join(map(str, a))
+    right = ", ".join(map(str, b))
+    return Exercise(
+        f"Cho A = {{{left}}} và B = {{{right}}}. Nhập tất cả phần tử của A ∪ B, mỗi phần tử một lần.",
+        tuple(sorted(set(a) | set(b))),
+        tuple(sorted(set(a) & set(b))),
+    )
+
+
+def _classify(context: str, statements: tuple[str, ...], functional: tuple[int, ...]) -> Exercise:
+    choices = "\n".join(f"{index}. {statement}" for index, statement in enumerate(statements, 1))
+    other = tuple(index for index in range(1, len(statements) + 1) if index not in functional)
+    return Exercise(f"{context} Nhập số thứ tự của tất cả yêu cầu chức năng.\n\n{choices}", functional, other)
+
+
 LESSONS = {
-    "equivalence": Lesson(
+    "toan_roi_rac": Lesson(
         topic=StudyTopic(
-            id="equivalence", title="Phân vùng tương đương",
-            goal="Chia miền đầu vào và chọn đại diện cho từng lớp.", page=2,
+            id="union", title="Phép hợp và phép giao",
+            goal="Phân biệt điều kiện thuộc ít nhất một tập và thuộc đồng thời hai tập.", page=1,
         ),
-        diagnostic=Exercise("tuổi đăng ký lớp", 21, 28),
+        document_id="discrete_math_study",
+        misconception="confuses_intersection",
+        diagnostic=_union((1, 4, 7), (4, 8)),
         exercises=(
-            Exercise("số lượng đặt", 5, 12),
-            Exercise("số vé mua", 3, 9),
-            Exercise("số quyển mượn", 6, 15),
+            _union((-3, 2, 5), (2, 6)),
+            _union((2, 9), (-2, 9, 11)),
+            _union((-5, 0, 3), (0, 10)),
         ),
         explanation=(
-            "Hãy chia miền đầu vào theo cách hệ thống xử lý. Với một khoảng nguyên có hai đầu mút "
-            "được chấp nhận, ba lớp gồm dưới khoảng, trong khoảng và trên khoảng. "
-            "Chọn một giá trị đại diện cho mỗi lớp, rồi xác định lớp đó được chấp nhận hay bị từ chối.\n\n"
-            "Ví dụ, nếu một đơn hàng nhận 10–20 sản phẩm, 8, 15 và 25 đại diện cho ba lớp. "
-            "Chọn 10, 15 và 20 chỉ kiểm tra lớp hợp lệ dù đó là ba số khác nhau."
+            "Phép hợp giữ mọi phần tử thuộc A hoặc B (kể cả thuộc cả hai), mỗi phần tử ghi một lần. "
+            "Phép giao chỉ giữ phần tử có mặt trong cả hai tập.\n\n"
+            "Ví dụ, với A = {3, 5} và B = {5, 10}, hợp là {3, 5, 10} và giao là {5}. "
+            "Số 3 nằm trong hợp dù nó không thuộc B."
         ),
         hints=(
-            "Trước khi chọn số, hãy nghĩ xem có bao nhiêu vùng trên trục số cần được kiểm tra.",
-            "Chọn một số nhỏ hơn đầu dưới, một số trong khoảng và một số lớn hơn đầu trên.",
+            "Một phần tử chỉ thuộc một trong hai tập có được đưa vào hợp không?",
+            "Lấy toàn bộ phần tử của A rồi thêm các phần tử có trong B mà chưa xuất hiện.",
         ),
     ),
-    "boundary": Lesson(
+    "thu_thap_phan_tich_yeu_cau": Lesson(
         topic=StudyTopic(
-            id="boundary", title="Phân tích giá trị biên",
-            goal="Chọn giá trị đúng biên và hai giá trị kề biên.", page=3,
+            id="functional", title="Yêu cầu chức năng và phi chức năng",
+            goal="Phân biệt hành vi hệ thống với tiêu chí chất lượng và ràng buộc.", page=1,
         ),
-        diagnostic=Exercise("điểm", 2, 20),
+        document_id="requirements_study",
+        misconception="confuses_nonfunctional",
+        diagnostic=_classify(
+            "Một hệ thống đặt lịch có bốn yêu cầu.",
+            (
+                "Sinh viên có thể hủy lịch đã đặt.",
+                "Thời gian phản hồi của trang kết quả không vượt quá 2 giây.",
+                "Hệ thống gửi xác nhận sau khi đặt lịch.",
+                "Dịch vụ phải sẵn sàng ít nhất 99,9% mỗi tháng.",
+            ),
+            (1, 3),
+        ),
         exercises=(
-            Exercise("số sản phẩm", 1, 10),
-            Exercise("số ngày mượn", 4, 14),
-            Exercise("nhiệt độ", -5, 5),
+            _classify(
+                "Một ứng dụng quản lý phòng học có bốn yêu cầu.",
+                (
+                    "Thời gian tải danh sách phòng không vượt quá 2 giây.",
+                    "Giảng viên có thể đặt một phòng còn trống.",
+                    "Ứng dụng hỗ trợ 200 người dùng đồng thời.",
+                    "Hệ thống gửi thông báo khi yêu cầu đặt phòng được duyệt.",
+                ),
+                (2, 4),
+            ),
+            _classify(
+                "Một cổng đăng ký học phần có bốn yêu cầu.",
+                (
+                    "Sinh viên có thể rút học phần đã đăng ký.",
+                    "Cổng đăng ký duy trì độ sẵn sàng 99,9% mỗi tháng.",
+                    "Hệ thống hiển thị danh sách học phần đã đăng ký.",
+                    "Trang danh sách tải trong tối đa 3 giây.",
+                ),
+                (1, 3),
+            ),
+            _classify(
+                "Một hệ thống mượn thiết bị có bốn yêu cầu.",
+                (
+                    "Người dùng nhận biên nhận khi trả thiết bị.",
+                    "Nhân viên có thể lập phiếu mượn.",
+                    "Tra cứu phản hồi trong tối đa 1 giây.",
+                    "Dữ liệu phải được lưu trữ tại Việt Nam.",
+                ),
+                (1, 2),
+            ),
         ),
         explanation=(
-            "Giá trị biên tập trung vào những chỗ quy tắc đổi từ chấp nhận sang từ chối hoặc ngược lại. "
-            "Với số nguyên, thử ngay trước, tại và ngay sau từng đầu mút, cách nhau một đơn vị.\n\n"
-            "Ví dụ, khoảng 20–50 cần thử 19, 20, 21 ở đầu dưới và 49, 50, 51 ở đầu trên. "
-            "So với phân vùng tương đương, trọng tâm ở đây là phát hiện lỗi sai một đơn vị tại biên."
+            "Yêu cầu chức năng mô tả hành vi hoặc dịch vụ mà hệ thống cung cấp. "
+            "Yêu cầu phi chức năng mô tả chất lượng hoặc ràng buộc cần đáp ứng.\n\n"
+            "Ví dụ, cho phép người dùng tải một hóa đơn là hành vi chức năng. "
+            "Tạo hóa đơn trong tối đa 3 giây là tiêu chí hiệu năng có thể kiểm tra."
         ),
         hints=(
-            "Có hai ranh giới cần kiểm tra. Đừng tập trung vào các số ở giữa khoảng.",
-            "Ở mỗi đầu mút, hãy cộng và trừ 1 rồi giữ cả chính giá trị đầu mút đó.",
+            "Xem từng câu mô tả hệ thống làm gì hay làm tốt đến mức nào.",
+            "Tìm các hành động hoặc dịch vụ cho người dùng. Tốc độ và sức tải là tiêu chí chất lượng.",
         ),
     ),
 }
@@ -118,27 +158,20 @@ def _read_integers(answer: str) -> list[int]:
     return [int(token) for token in tokens]
 
 
-def _grade(exercise: Exercise, boundary: bool, answer: str) -> StudyMistake | None:
+def _grade(exercise: Exercise, misconception: StudyMistake, answer: str) -> StudyMistake | None:
     values = _read_integers(answer)
-    if boundary:
-        expected = set(exercise.answer(boundary=True))
-        if set(values) == {exercise.lower, exercise.upper}:
-            return "only_endpoints"
-        if not expected <= set(values):
-            return "missing_neighbors"
-    else:
-        partitions = {
-            -1 if value < exercise.lower else 1 if value > exercise.upper else 0
-            for value in values
-        }
-        if len(partitions) == 1 and len(values) > 1:
-            return "one_partition"
-        if len(partitions) < 3:
-            return "missing_partition"
-    return "extra_values" if len(values) != (6 if boundary else 3) else None
+    submitted = set(values)
+    expected = set(exercise.answer)
+    if submitted == expected and len(values) == len(expected):
+        return None
+    if submitted == set(exercise.confused_answer):
+        return misconception
+    if submitted < expected:
+        return "incomplete"
+    return "extra_values" if expected <= submitted else "wrong_values"
 
 
-def _transition(payload: StudyTurnRequest, lesson: Lesson, boundary: bool, previous: StudyState) -> StudyState:
+def _transition(payload: StudyTurnRequest, lesson: Lesson, previous: StudyState) -> StudyState:
     state = previous.model_copy()
     action: StudyAction = payload.action
     if action in {"open", "view"}:
@@ -166,7 +199,7 @@ def _transition(payload: StudyTurnRequest, lesson: Lesson, boundary: bool, previ
     elif action == "submit":
         diagnostic = state.step == "diagnose"
         exercise = lesson.diagnostic if diagnostic else lesson.exercises[state.variant]
-        mistake = _grade(exercise, boundary, payload.answer)
+        mistake = _grade(exercise, lesson.misconception, payload.answer)
         if mistake:
             state.mistake_count = min(state.mistake_count + 1, 999) if mistake == state.last_mistake else 1
             state.last_mistake = mistake
@@ -184,12 +217,11 @@ def _transition(payload: StudyTurnRequest, lesson: Lesson, boundary: bool, previ
 def study_turn(
     lesson: Lesson, payload: StudyTurnRequest, previous: StudyState, chunks: list[ChunkSource], ai: AIConfig | None,
 ) -> StudyTurn:
-    boundary = lesson.topic.id == "boundary"
-    state = _transition(payload, lesson, boundary, previous)
+    state = _transition(payload, lesson, previous)
     response = StudyTurn(state=state)
     exercise = lesson.exercises[state.variant]
     if state.step == "diagnose":
-        response.prompt = lesson.diagnostic.prompt(boundary)
+        response.prompt = lesson.diagnostic.prompt
     elif state.step == "explain":
         response.lesson = lesson.explanation
         response.sources = [source_item(chunk) for chunk in chunks]
@@ -198,15 +230,14 @@ def study_turn(
         elif state.diagnosis:
             response.feedback = _MISTAKES[state.diagnosis]
     elif state.step == "practice":
-        response.prompt = exercise.prompt(boundary)
+        response.prompt = exercise.prompt
         if state.practice_mistake:
             response.feedback = _MISTAKES[state.practice_mistake]
         if state.hint_level:
             response.hint = lesson.hints[state.hint_level - 1]
     else:
-        label = "Bộ giá trị cần thử" if boundary else "Một bộ giá trị đại diện hợp lệ"
-        values = ", ".join(str(value) for value in exercise.answer(boundary))
-        response.lesson = f"{label} là {values}.\n\n{lesson.explanation}"
+        values = ", ".join(str(value) for value in exercise.answer)
+        response.lesson = f"Đáp án là {values}.\n\n{lesson.explanation}"
         response.sources = [source_item(chunk) for chunk in chunks]
         response.feedback = (
             "Bạn đã làm đúng ngay lần đầu mà không cần gợi ý."
@@ -230,7 +261,7 @@ def _add_ai_explanation(
         return
     question = (
         f"Hướng dẫn một sinh viên luyện kỹ năng {lesson.topic.title}. "
-        "Giải thích phương pháp theo từng bước, dùng số liệu tự tạo khác ví dụ trong học liệu. "
+        "Giải thích phương pháp theo từng bước, dùng ví dụ tự tạo khác ví dụ trong học liệu. "
         "Kết thúc bằng một câu hỏi gợi suy nghĩ. Chỉ dùng học liệu để giải thích kiến thức."
     )
     if response.feedback:
