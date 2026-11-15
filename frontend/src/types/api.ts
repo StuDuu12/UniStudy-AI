@@ -19,6 +19,20 @@ export interface Source {
 }
 
 export type ModelProvider = 'local' | 'gemini' | 'chatgpt';
+export type AnswerStyle = 'auto' | 'detailed' | 'comparison' | 'example' | 'review';
+
+export interface SendQuestionOptions {
+  answerStyle?: AnswerStyle;
+  prepared?: ChatResponse;
+}
+
+export type SendQuestion = (
+  question: string,
+  modelProvider?: ModelProvider,
+  modelName?: string,
+  apiKey?: string,
+  options?: SendQuestionOptions,
+) => void;
 
 export interface ChatRequest {
   course_id: string;
@@ -27,6 +41,7 @@ export interface ChatRequest {
   model_provider?: ModelProvider;
   model_name?: string;
   api_key?: string;
+  answer_style?: AnswerStyle;
 }
 
 export interface ChatResponse {

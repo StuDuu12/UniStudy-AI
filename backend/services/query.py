@@ -5,7 +5,9 @@ from backend.services.evidence import normalize_text
 
 def query_parts(question: str) -> list[str]:
     text = normalize_text(question)
-    parts = re.split(r"[.!?;\n]+", text)
+    # Keep numeric examples out of search terms. The original is passed to the answer model.
+    text = re.sub(r"\{(?:[^{}]|\{[^{}]*\})*\}", " ", text)
+    parts = re.split(r"[!?;\n]+|(?<!\d)\.|\.(?!\d)", text)
     useful = []
     for part in parts:
         part = part.strip(" ,:")

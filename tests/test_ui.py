@@ -83,7 +83,7 @@ def test_whitespace_does_not_create_a_turn():
 def test_ai_connection_failure_automatically_shows_sources(monkeypatch):
     attempted_questions = []
 
-    def provider_unavailable(config, question, sources):
+    def provider_unavailable(config, question, sources, **_):
         attempted_questions.append(question)
         raise AIUnavailable
 

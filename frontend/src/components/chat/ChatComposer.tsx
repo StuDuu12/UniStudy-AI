@@ -16,7 +16,7 @@ import {
   ShieldCheck,
   Zap,
 } from 'lucide-react';
-import type { ModelProvider } from '../../types/api';
+import type { AnswerStyle, ModelProvider } from '../../types/api';
 
 const MAX_QUESTION_LENGTH = 1000;
 
@@ -171,18 +171,17 @@ const BADGE_STYLES: Record<string, string> = {
 };
 
 interface ChatComposerProps {
-  onSend: (
-    question: string,
-    modelProvider?: ModelProvider,
-    modelName?: string,
-    apiKey?: string,
-  ) => void;
+  onSend: (question: string) => void;
+  answerStyle: AnswerStyle;
+  onAnswerStyleChange: (style: AnswerStyle) => void;
   disabled?: boolean;
   placeholder?: string;
 }
 
 export const ChatComposer: React.FC<ChatComposerProps> = ({
   onSend,
+  answerStyle,
+  onAnswerStyleChange,
   disabled,
   placeholder = 'Nhập câu hỏi về bài giảng, khái niệm trong học phần...',
 }) => {
@@ -210,6 +209,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   const menuRef = useRef<HTMLDivElement>(null);
 
   const canSubmit = question.trim().length > 0 && !disabled;
+  const isLookup = model === 'local' && modelName === 'lookup';
 
   // Whenever menu opens, sync preview pane to currently selected model
   useEffect(() => {
@@ -266,14 +266,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     if (e) e.preventDefault();
     if (!canSubmit) return;
 
-    const apiKey =
-      model === 'gemini'
-        ? geminiKey.trim() || undefined
-        : model === 'chatgpt'
-        ? chatgptKey.trim() || undefined
-        : undefined;
-
-    onSend(question.trim(), model, modelName, apiKey);
+    onSend(question.trim());
     setQuestion('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -750,13 +743,30 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
           <span className="text-[11px] text-slate-400 font-medium">
             {model === 'local' && (
               modelName === 'lookup'
-                ? 'Offline thuần 100% CPU (Dành cho Giám khảo)'
+                ? 'Chọn mô hình AI để giải thích hoặc soạn câu ôn tập.'
                 : `Ollama Local (${modelName})`
             )}
             {model === 'gemini' && (hasKey('gemini') ? `Google Gemini (${modelName})` : 'Chưa nhập API Key Gemini')}
             {model === 'chatgpt' && (hasKey('chatgpt') ? `OpenAI ChatGPT (${modelName})` : 'Chưa nhập API Key ChatGPT')}
           </span>
         </div>
+
+        {!isLookup && (
+          <label className="flex flex-wrap items-center gap-2 px-1 text-xs text-slate-600">
+            <span>Kiểu trả lời AI</span>
+            <select
+              value={answerStyle}
+              onChange={(event) => onAnswerStyleChange(event.target.value as AnswerStyle)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-slate-800 focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="auto">Theo câu hỏi</option>
+              <option value="detailed">Giải thích chi tiết</option>
+              <option value="comparison">So sánh</option>
+              <option value="example">Ví dụ minh họa</option>
+              <option value="review">Câu hỏi ôn tập</option>
+            </select>
+          </label>
+        )}
 
         {/* Question Textarea Box */}
         <div className="relative flex items-end bg-slate-50 border border-slate-200 rounded-2xl shadow-2xs focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:bg-white transition-all p-2">

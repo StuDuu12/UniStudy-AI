@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 import re
@@ -99,8 +100,11 @@ class CourseRetriever:
             self.vectorizer = None
             self.matrix = None
 
-    def search(self, question: str, limit: int = 3) -> list[ChunkSource]:
-        parts = query_parts(question)
+    def search(
+        self, question: str, limit: int = 3, *, concepts: Sequence[str] = (),
+    ) -> list[ChunkSource]:
+        # Search separately for each concept, keeping the original wording as a fallback.
+        parts = list(dict.fromkeys([*(normalize_text(term).strip() for term in concepts), *query_parts(question)]))
         batches = [self._search_part(part, limit) for part in parts]
         results = []
         seen = set()
@@ -128,8 +132,9 @@ class CourseRetriever:
         required_phrases = []
         if re.search(r"\buse case\b", normalized_question):
             required_phrases.append(r"\b(?:use case|ca su dung)\b")
-        if re.search(r"\blich dang ky\b", normalized_question):
-            required_phrases.append(r"\blich dang ky\b")
+        registration_phrase = re.search(r"\b(?:lich dang ky|dang ky hoc phan)\b", normalized_question)
+        if registration_phrase:
+            required_phrases.append(rf"\b{registration_phrase[0]}\b")
         # Match terminology used in slides, not only the wording of the question.
         expansions = []
         if "tinh chat" in normalized_question:

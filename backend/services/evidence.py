@@ -16,6 +16,7 @@ _FOLLOW_UP_QUESTION = re.compile(
     r"|(?:(?:no )?(?:co|gom) )?(?:may|bao nhieu) (?:loai|dang|phan|buoc)"
     r"|(?:(?:nam )?o )?(?:trang|chuong|muc) (?:nao|bao nhieu|may)"
     r"|(?:no|cai nay|cai do|cai kia) (?:la gi|co tac dung gi|dung de lam gi|hoat dong the nao)"
+    r"|(?:vay )?neu .+ thi (?:ket qua|dap an|gia tri) (?:la (?:gi|bao nhieu)|the nao)"
     r"|tai sao|vi sao|the nao|nhu the nao"
     r")"
 )

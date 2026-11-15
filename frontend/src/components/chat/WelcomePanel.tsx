@@ -76,7 +76,7 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
         </h2>
         <p className="text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
           {canAsk
-            ? 'Hỏi đáp bài học trực tiếp dựa trên giáo trình gốc. Mọi câu trả lời đều trích dẫn chính xác số trang và tài liệu đối chiếu.'
+            ? 'Tra cứu PDF hoặc chọn mô hình AI để giải thích bài, minh họa bằng ví dụ và tạo câu hỏi ôn tập.'
             : courseId
               ? 'Chưa có tài liệu trong học phần này. Hãy thêm tệp PDF từ thanh bên để bắt đầu tra cứu.'
               : 'Hãy chọn một học phần ở thanh bên trái hoặc tạo học phần mới để bắt đầu ôn tập.'}
@@ -95,7 +95,7 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
         </span>
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white border border-slate-200/80 text-xs text-slate-700 font-medium shadow-2xs">
           <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          <span>Không ảo giác thông tin</span>
+          <span>Báo khi thiếu căn cứ</span>
         </span>
       </div>
 

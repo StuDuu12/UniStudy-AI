@@ -125,6 +125,9 @@ interface ServerMessage {
   content: string;
   timestamp: string;
   status: Message['status'] | null;
+  mode?: Message['mode'] | null;
+  provider?: Message['provider'] | null;
+  model_name?: string | null;
   sources: Message['sources'] | null;
   message: string | null;
   context_question: string | null;
@@ -164,6 +167,9 @@ export async function fetchServerConversations(
         content: m.content,
         timestamp: m.timestamp,
         status: m.status ?? undefined,
+        mode: m.mode ?? undefined,
+        provider: m.provider ?? undefined,
+        model_name: m.model_name ?? undefined,
         sources: m.sources ?? undefined,
         message: m.message,
         contextQuestion: m.context_question ?? undefined,
@@ -191,6 +197,9 @@ export async function saveServerConversation(
         content: m.content,
         timestamp: m.timestamp,
         status: m.status,
+        mode: m.mode,
+        provider: m.provider,
+        model_name: m.model_name,
         sources: m.sources,
         message: m.message,
         context_question: m.contextQuestion,

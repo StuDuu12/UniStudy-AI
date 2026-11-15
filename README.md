@@ -14,6 +14,7 @@ Hướng dẫn đọc SRC, kiểm tra top-k và đối chiếu trang PDF: [RAG_G
 - **Frontend Hiện đại:** Chuyển đổi từ Streamlit sang **React + TypeScript + Tailwind CSS** với giao diện Modern Academic Workspace, tương thích desktop và mobile drawer.
 - **Backend FastAPI Chuẩn REST:** Tách biệt rõ ràng tầng UI và tầng xử lý AI/PDF. Cung cấp API tài liệu trực tiếp tại `/docs`.
 - **Tra cứu theo học phần:** Đặt câu hỏi để tìm đoạn trích, số trang và ảnh nguồn trong PDF của học phần đang chọn. Luồng tra cứu dùng TF-IDF và chạy cục bộ.
+- **Giải thích bằng AI:** Dùng các đoạn PDF tìm được để giải thích chi tiết, so sánh, minh họa hoặc tạo câu hỏi ôn tập.
 - **Lịch sử theo học phần:** Mở lại hội thoại đã lưu và dùng ngữ cảnh trong cuộc trò chuyện để tra cứu câu hỏi nối tiếp.
 - **Tự quản lý học liệu:** Tạo học phần từ PDF hoặc bổ sung PDF vào môn đang chọn. Danh mục và tài liệu được lưu lại trên máy.
 - **Học liệu có sẵn:** Tin học đại cương, Kiểm thử phần mềm, Phân tích thuật toán, Toán rời rạc và Thu thập & phân tích yêu cầu.
@@ -108,6 +109,14 @@ npm run build
 3. Nhập câu hỏi trong cuộc trò chuyện. Hệ thống tìm đoạn liên quan trong tài liệu của môn đang chọn và hiển thị trang nguồn để đối chiếu.
 
 Mỗi lượt nhận tối đa 5 PDF có văn bản, mỗi tệp tối đa 20 MB. PDF scan cần được nhận dạng chữ trước. Tệp tải lên được lưu trong `data/local_course_pdfs/`.
+
+### Giải thích bài học bằng mô hình AI
+
+1. Chọn học phần đã có PDF. Trong menu mô hình ở ô hỏi, chọn Gemini hoặc ChatGPT và nhập khóa của dịch vụ, hoặc chọn mô hình đã cài trong Ollama.
+2. Chọn **Kiểu trả lời AI**. Dùng **Theo câu hỏi** để mô hình tự chọn cách trình bày, hoặc chọn **Giải thích chi tiết**, **So sánh**, **Ví dụ minh họa** hay **Câu hỏi ôn tập**.
+3. Thử hỏi **Phân vùng tương đương là gì?** trong học phần **Kiểm thử phần mềm**. Mã như **[1]** cạnh nội dung tương ứng với nguồn được đánh số bên dưới. Mở trang PDF để đối chiếu quy tắc. Ví dụ và bài tập do mô hình soạn được ghi nhãn trong câu trả lời.
+
+Chế độ **Tra cứu giáo trình (Offline)** hiển thị đoạn trích từ PDF trên máy. Khi mô hình gặp lỗi, bấm **Tra cứu giáo trình cho câu này** để xem đoạn trích. Chọn Ollama để xử lý học liệu trên máy, hoặc chỉ dùng Gemini và ChatGPT với học liệu được phép gửi đến dịch vụ đó.
 
 ### Lịch sử hội thoại và câu hỏi nối tiếp
 

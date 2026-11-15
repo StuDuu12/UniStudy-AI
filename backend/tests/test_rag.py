@@ -6,7 +6,7 @@ import pymupdf
 import pytest
 
 from backend.services.course_manager import CourseManager
-from backend.services.ingest import DocumentInfo, extract_pdf_chunks
+from backend.services.ingest import ChunkSource, DocumentInfo, extract_pdf_chunks
 from backend.services.llm_service import AIConfig, AIUnavailable
 from backend.services.retrieval import CourseRetriever
 
@@ -112,7 +112,7 @@ def manager(tmp_path):
 
 
 def test_ai_refusal_is_not_changed_to_success(manager):
-    manager._ai = SimpleNamespace(explain=lambda *_: ("", []))
+    manager._ai = SimpleNamespace(explain=lambda *_, **__: ("", []))
     response = manager.answer_question("software_testing", "Operating system")
     assert response.status == "insufficient_evidence"
     assert response.answer == ""
@@ -131,14 +131,14 @@ def test_intro_does_not_change_retrieved_sources(manager):
 
 
 def test_answer_without_valid_citations_is_rejected(manager):
-    manager._ai = SimpleNamespace(explain=lambda *_: ("Unsupported answer", []))
+    manager._ai = SimpleNamespace(explain=lambda *_, **__: ("Unsupported answer", []))
     response = manager.answer_question("software_testing", "Operating system")
     assert response.status == "ai_unavailable"
     assert response.answer == ""
 
 
 def test_provider_outage_is_reported(manager):
-    def unavailable(*_):
+    def unavailable(*_, **__):
         raise AIUnavailable
     manager._ai = SimpleNamespace(explain=unavailable)
     response = manager.answer_question("software_testing", "Operating system")
@@ -148,13 +148,29 @@ def test_provider_outage_is_reported(manager):
 
 
 def test_valid_ai_answer_keeps_retrieved_metadata(manager):
-    manager._ai = SimpleNamespace(explain=lambda question, sources: ("Manages resources", sources[:1]))
+    manager._ai = SimpleNamespace(explain=lambda question, sources, **_: ("Manages resources", sources[:1]))
     response = manager.answer_question("software_testing", "Operating system")
     assert response.status == "success"
     assert response.mode == "ai"
     assert response.sources[0].document_id == "lecture"
     assert response.sources[0].page == 1
     assert response.sources[0].document_sha256
+
+
+def test_ai_example_keeps_follow_up_separate_from_retrieval_topic(manager):
+    requests = []
+
+    def explain(question, sources, **options):
+        requests.append((question, options))
+        return "Ví dụ minh họa về cách hệ điều hành quản lý tài nguyên.", sources[:1]
+
+    manager._ai = SimpleNamespace(explain=explain)
+    response = manager.answer_question(
+        "software_testing", "Cho ví dụ?", ["Operating system"], answer_style="example",
+    )
+
+    assert requests == [("Cho ví dụ?", {"answer_style": "example", "context_question": "Operating system"})]
+    assert (response.status, response.mode, response.sources[0].page) == ("success", "ai", 1)
 
 
 @pytest.mark.parametrize("source_ids", [["S999"], ["S1", "S999"], [], [123]])
@@ -177,7 +193,7 @@ def test_provider_cannot_invent_citations(monkeypatch, source_ids):
 
 
 def test_local_model_outage_returns_ai_unavailable_with_actionable_message(manager, monkeypatch):
-    def unreachable(*_):
+    def unreachable(*_, **__):
         raise AIUnavailable("network")
 
     monkeypatch.setattr(AIConfig, "explain", unreachable)
@@ -209,7 +225,7 @@ def test_requirements_elicitation_techniques_ranks_page_29_top(model_name, monke
     course_manager = CourseManager(root)
     course_manager._ai = AIConfig("http://127.0.0.1:11434/v1/chat/completions", "test-model", "")
 
-    def unreachable(*_):
+    def unreachable(*_, **__):
         if model_name == "lookup":
             pytest.fail("Explicit lookup must skip the model")
         raise AIUnavailable("network")
@@ -232,7 +248,7 @@ def test_requirements_elicitation_techniques_ranks_page_29_top(model_name, monke
 
 
 def test_out_of_scope_questions_with_overlapping_words_are_rejected(monkeypatch):
-    def unexpected_model_call(*_):
+    def unexpected_model_call(*_, **__):
         pytest.fail("An out-of-scope question reached the model without supporting passages")
 
     monkeypatch.setattr(AIConfig, "explain", unexpected_model_call)
@@ -240,6 +256,7 @@ def test_out_of_scope_questions_with_overlapping_words_are_rejected(monkeypatch)
     manager = CourseManager(root)
     for question in (
         "Lịch đăng ký học phần học kỳ tới bắt đầu ngày nào?",
+        "Học kỳ này trường mình đăng ký học phần ngày nào?",
         "Biểu đồ Use Case dùng để mô hình hóa khía cạnh nào của hệ thống?",
         "Thủ đô của Nhật Bản là gì?",
     ):
@@ -248,7 +265,7 @@ def test_out_of_scope_questions_with_overlapping_words_are_rejected(monkeypatch)
 
 
 def test_missing_local_model_is_identified(manager, monkeypatch):
-    def model_not_found(*_):
+    def model_not_found(*_, **__):
         raise AIUnavailable("model")
 
     monkeypatch.setattr(AIConfig, "explain", model_not_found)
@@ -258,3 +275,113 @@ def test_missing_local_model_is_identified(manager, monkeypatch):
     assert result.status == "ai_unavailable"
     assert "missing-test-model" in result.message
 
+
+
+@pytest.mark.parametrize(("question", "lecture_pages", "expected_pages", "concepts"), [
+    (
+        "Mình mới học Toán rời rạc và hay nhầm giữa “thuộc” với “là tập con”. "
+        "Nếu A = {1, 2}, thì 1 và {1} liên hệ với A như thế nào?",
+        {
+            2: "Ký hiệu phần tử của tập hợp: a là một phần tử khi a thuộc tập hợp A.",
+            4: "Khái niệm cơ bản. Tập con: A là tập con của B khi mọi phần tử của A đều thuộc B.",
+        },
+        {2, 4},
+        ("ký hiệu phần tử tập hợp", "tập con khái niệm"),
+    ),
+    (
+        "Cho tập vũ trụ U = {1, 2, 3, 4, 5}, A = {1, 2, 3}, B = {2, 4}. "
+        "Hãy tìm A − B và phần bù của A trong U. Giải thích vì sao hai kết quả khác nhau.",
+        {
+            10: "Phép hiệu của hai tập hợp giữ các phần tử thuộc A mà không thuộc B.",
+            19: "Phần bù của tập hợp A trong tập vũ trụ U gồm mọi phần tử của U không thuộc A.",
+        },
+        {10, 19},
+        ("phép hiệu tập hợp", "phần bù tập hợp"),
+    ),
+    (
+        "Lập bảng chân trị của p → q và giải thích khi nào mệnh đề kéo theo sai.",
+        {
+            9: "Phép suy ra: Mệnh đề p suy ra q nhận giá trị F khi p là T và q là F.",
+            11: "Bảng giá trị chân lý: p q p→q T T T T F F F T T F F T.",
+        },
+        {9, 11},
+        ("phép suy ra", "bảng giá trị chân lý p q T F"),
+    ),
+])
+def test_discrete_math_application_retrieves_each_required_rule(question, lecture_pages, expected_pages, concepts):
+    document = DocumentInfo("lecture", "lecture.pdf", Path("lecture.pdf"), "project_demo")
+    excerpts = {
+        **lecture_pages,
+        25: "Tương đương logic. Lập bảng giá trị chân lý của mệnh đề. Hãy giải thích vì sao kết quả khác nhau.",
+        26: "Tổ hợp chập k từ n phần tử. Cho A = {1, 2, 3, 4, 5} và B = {2, 4}.",
+        36: "Đồ thị con. Ví dụ về phần tử của đồ thị và tập con của tập đỉnh.",
+    }
+    chunks = [
+        ChunkSource("lecture", document.document_name, page, str(page), excerpt)
+        for page, excerpt in excerpts.items()
+    ]
+    retriever = CourseRetriever("toan_roi_rac", [document], chunks)
+    assert expected_pages <= {source.page for source in retriever.search(question, limit=3, concepts=concepts)}
+
+
+
+def test_new_course_can_retrieve_multiple_concepts_with_rewritten_terms():
+    document = DocumentInfo("new", "new.pdf", Path("new.pdf"), "project_demo")
+    excerpts = [
+        "Boundary value analysis tests data at, just below, and just above each boundary.",
+        "Equivalence partitioning divides inputs that should behave alike into classes.",
+        "Account registration sends a welcome message with setup instructions.",
+    ]
+    chunks = [ChunkSource("new", "new.pdf", page, str(page), text) for page, text in enumerate(excerpts, 1)]
+    retriever = CourseRetriever("new_course", [document], chunks)
+    results = retriever.search(
+        "How do I group similar inputs, and which values near the edge should I check?",
+        limit=2,
+        concepts=("equivalence partitioning", "boundary value analysis"),
+    )
+    assert [source.page for source in results] == [2, 1]
+
+
+def test_query_parts_keeps_request_when_example_contains_many_commas():
+    from backend.services.query import query_parts
+
+    parts = query_parts(
+        "Cho dữ liệu X = {1, 2, {3, 4}, 5, 6, 7, 8}. "
+        "Hãy trình bày cách kiểm tra dữ liệu biên và giải thích mục đích.",
+    )
+    assert any("kiem tra du lieu bien" in part for part in parts)
+    assert all(not any(character.isdigit() for character in part) for part in parts)
+
+
+
+@pytest.mark.parametrize("planning_succeeds", [True, False])
+def test_hosted_rag_keeps_the_full_question_and_falls_back_to_lexical_search(manager, monkeypatch, planning_succeeds):
+    question = "Mình đang thử giải thích một số nội dung theo bài học trên lớp. Operating system"
+    calls = []
+
+    def plan(_config, original, _course_name, prior):
+        assert original == question and prior is None
+        calls.append("plan")
+        if not planning_succeeds:
+            raise AIUnavailable("timeout")
+        return ["operating system"]
+
+    def answer(_config, original, sources, **_options):
+        assert original == question and sources[0].page == 1
+        calls.append("answer")
+        return "Explained from the lecture.", sources[:1]
+
+    monkeypatch.setattr(AIConfig, "search_terms", plan)
+    monkeypatch.setattr(AIConfig, "explain", answer)
+    response = manager.answer_question("software_testing", question, model_provider="gemini", api_key="test-key")
+    assert response.status == "success"
+    assert calls == ["plan", "answer"]
+
+
+def test_a_new_example_uses_the_previous_topic_if_the_operation_is_implicit(manager):
+    previous = "Operating system"
+    question = "Vậy nếu có thêm hai chương trình chạy cùng lúc thì kết quả là gì?"
+    response = manager.answer_question("software_testing", question, [previous], model_name="lookup")
+    assert response.status == "success"
+    assert response.context_question == previous
+    assert response.sources[0].page == 1

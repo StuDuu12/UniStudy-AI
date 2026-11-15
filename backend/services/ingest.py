@@ -13,7 +13,6 @@ _CHUNK_WORDS = 135
 _CHUNK_OVERLAP = 25
 _MAX_PREVIEW_EDGE = 1440
 
-
 @dataclass(frozen=True)
 class DocumentInfo:
     document_id: str
@@ -35,6 +34,7 @@ class ChunkSource:
     document_sha256: str = ""
     heading: str = ""
     formatted_excerpt: str = ""
+    has_visual_content: bool = False
 
 
 def extract_pdf_chunks(document: DocumentInfo, pdf_bytes: bytes, *, sort: bool = True) -> Iterator[ChunkSource]:
@@ -60,6 +60,12 @@ def extract_pdf_chunks(document: DocumentInfo, pdf_bytes: bytes, *, sort: bool =
             layout = pdf_layout_blocks(lines, page_number, page.rect.width, page.rect.height)
             heading = lines[0].text[:120] if lines else ""
             words = [word for line in lines for word in line.text.split()]
+            # Dense rows of short entries can be a table flattened by PDF extraction.
+            has_table_layout = len(lines) >= 16 and sum(len(line.text.split()) <= 2 for line in lines) >= len(lines) * 0.75
+            has_visual_content = has_table_layout or any(
+                (pymupdf.Rect(image["bbox"]) & page.rect).get_area() >= page.rect.get_area() * 0.02
+                for image in page.get_image_info()
+            )
             # Keep boundary context, while preserving one physical PDF page per chunk.
             step = _CHUNK_WORDS - _CHUNK_OVERLAP
             for start in range(0, len(words), step):
@@ -77,6 +83,7 @@ def extract_pdf_chunks(document: DocumentInfo, pdf_bytes: bytes, *, sort: bool =
                     document_sha256=document.sha256,
                     heading=heading,
                     formatted_excerpt=format_pdf_blocks(layout, start, start + _CHUNK_WORDS),
+                    has_visual_content=has_visual_content,
                 )
                 if start + _CHUNK_WORDS >= len(words):
                     break
@@ -87,7 +94,9 @@ def get_pdf_page_count(pdf_bytes: bytes) -> int:
         return pdf.page_count
 
 
-def render_pdf_page_image(pdf_bytes: bytes, page_number: int) -> bytes:
+def render_pdf_page_image(
+    pdf_bytes: bytes, page_number: int, *, max_edge: int = _MAX_PREVIEW_EDGE,
+) -> bytes:
     with PDF_LOCK, pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
         if not 1 <= page_number <= pdf.page_count:
             raise ValueError(f"Page {page_number} out of range (1..{pdf.page_count})")
@@ -96,5 +105,5 @@ def render_pdf_page_image(pdf_bytes: bytes, page_number: int) -> bytes:
         longest_edge = max(rect.width, rect.height)
         if rect.is_empty or not isfinite(longest_edge):
             raise ValueError("Invalid PDF page dimensions")
-        scale = min(2.0, _MAX_PREVIEW_EDGE / longest_edge)
+        scale = min(2.0, max_edge / longest_edge)
         return page.get_pixmap(matrix=pymupdf.Matrix(scale, scale)).tobytes("png")

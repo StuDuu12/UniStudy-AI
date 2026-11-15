@@ -13,6 +13,7 @@ from threading import Lock
 from pydantic import TypeAdapter, ValidationError
 
 from backend.schemas.chat import (
+    AnswerStyle,
     ChatResponse,
     ChatMode,
     ChatStatus,
@@ -23,7 +24,9 @@ from backend.schemas.chat import (
     SourceItem,
 )
 from backend.services.evidence import EVIDENCE_THRESHOLD, retrieval_query
-from backend.services.ingest import ChunkSource, DocumentInfo, extract_pdf_chunks, get_pdf_page_count
+from backend.services.ingest import (
+    ChunkSource, DocumentInfo, extract_pdf_chunks, get_pdf_page_count, render_pdf_page_image,
+)
 from backend.services.retrieval import CourseRetriever
 from backend.services.llm_service import AIConfig, AIUnavailable, get_provider_config
 from backend.services.query import query_parts
@@ -132,6 +135,31 @@ COURSE_SUGGESTED_QUESTIONS = {
         "Tài liệu hóa yêu cầu bằng ngôn ngữ tự nhiên có ưu điểm gì?",
     ],
 }
+
+
+def _selected_page_images(sources: Sequence[ChunkSource], documents: dict[str, DocumentInfo]) -> dict[str, bytes]:
+    images = {}
+    seen = set()
+    for source in sources:
+        page_key = (source.document_id, source.page)
+        if not source.has_visual_content or page_key in seen:
+            continue
+        seen.add(page_key)
+        document = documents.get(source.document_id)
+        if document is None or document.sha256 != source.document_sha256:
+            continue
+        try:
+            pdf = document.path.read_bytes()
+            if sha256(pdf).hexdigest() != document.sha256:
+                continue
+            image = render_pdf_page_image(pdf, source.page, max_edge=1200)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if len(image) <= 500_000:
+            images[source.chunk_id] = image
+            if len(images) == 2:
+                break
+    return images
 
 
 def source_item(source: ChunkSource) -> SourceItem:
@@ -485,6 +513,7 @@ class CourseManager:
         model_provider: str | None = None,
         model_name: str | None = None,
         api_key: str | None = None,
+        answer_style: AnswerStyle = "auto",
     ) -> ChatResponse:
         def notice(status: ChatStatus, message: str) -> ChatResponse:
             return ChatResponse(
@@ -511,46 +540,64 @@ class CourseManager:
         retriever = catalog.retrievers.get(course_id)
         if retriever is None:
             return notice("no_documents", "Chưa có dữ liệu tìm kiếm cho học phần này.")
-        limit = min(6, max(3, len(query_parts(query))))
+        ai_config, error_reason = get_provider_config(model_provider, api_key, self._ai, model_name=model_name)
+        prior_topic = context_question if context_question != question.strip() else None
+        retrieval_text = prior_topic or query
+        limit = min(6, max(3, len(query_parts(retrieval_text))))
+        concepts = []
+        if isinstance(ai_config, AIConfig) and ai_config.supports_rag_enrichment and len(question.split()) >= 10:
+            try:
+                concepts = ai_config.search_terms(question, catalog.courses[course_id].course_name, prior_topic)
+            except (AIUnavailable, ValueError):
+                # The optional search request must not block lexical retrieval.
+                pass
         if re.search(r"gồm|bao gồm|những phép|cac phep|các phép|tính chất|tiên đề", query, re.IGNORECASE):
             limit = 6
-        sources = [source for source in retriever.search(query, limit=limit) if source.score >= EVIDENCE_THRESHOLD]
+        if ai_config and answer_style != "auto":
+            limit = 6
+        sources = [
+            source for source in retriever.search(
+                retrieval_text, limit=max(limit, min(6, len(concepts) * 2)), concepts=concepts,
+            )
+            if source.score >= EVIDENCE_THRESHOLD
+        ]
         if not sources:
             message = "Không tìm thấy tài liệu phù hợp trong giáo trình cho câu hỏi này. Bạn hãy đặt câu hỏi liên quan đến nội dung bài giảng của môn học."
             if model_provider and model_name != "lookup":
                 message += " Hệ thống chưa gọi mô hình vì thiếu đoạn nguồn phù hợp."
             return notice("insufficient_evidence", message)
-        if limit == 6:
+        if limit == 6 or len(concepts) >= 2:
             # Slides often split one list across adjacent physical pages. Include bounded
             # context without pretending that adjacent pages have a similarity score.
-            anchors = list(sources[:3])
-            seen = {s.chunk_id for s in sources}
+            anchors = sources[:min(3, len(concepts))] if concepts else sources[:3]
+            context_limit = min(10, len(sources) + 4) if concepts else 12
+            seen = {source.chunk_id for source in sources}
             # Carry section headings from PDF ingestion: a definition and its laws
             # frequently span several slides under the same numbered heading.
             for anchor in anchors:
-                if not re.match(r"^\d+\.\s", anchor.heading):
+                if limit != 6 or not re.match(r"^\d+\.\s", anchor.heading):
                     continue
                 for candidate in retriever.chunks:
                     if (candidate.document_id == anchor.document_id
                             and candidate.heading == anchor.heading
-                            and candidate.chunk_id not in seen and len(sources) < 12):
+                            and candidate.chunk_id not in seen and len(sources) < context_limit):
                         sources.append(replace(candidate, score=0.0))
                         seen.add(candidate.chunk_id)
+            seen_pages = {(source.document_id, source.page) for source in sources}
             for anchor in anchors:
                 for candidate in retriever.chunks:
+                    page_key = (candidate.document_id, candidate.page)
                     if (candidate.document_id == anchor.document_id
                             and abs(candidate.page - anchor.page) == 1
-                            and candidate.chunk_id not in seen and len(sources) < 12):
+                            and page_key not in seen_pages and len(sources) < context_limit):
                         sources.append(replace(candidate, score=0.0))
-                        seen.add(candidate.chunk_id)
+                        seen_pages.add(page_key)
 
         ai_answer = ""
         cited_sources = sources
         mode: ChatMode = "lookup"
         response_status: ChatStatus = "success"
         response_message = None
-
-        ai_config, error_reason = get_provider_config(model_provider, api_key, self._ai, model_name=model_name)
 
         if error_reason == "missing_key":
             provider_title = "Google Gemini" if model_provider == "gemini" else "OpenAI ChatGPT"
@@ -567,7 +614,14 @@ class CourseManager:
 
         if ai_config:
             try:
-                raw_ans, cited = ai_config.explain(query, sources)
+                visual = {}
+                if isinstance(ai_config, AIConfig) and ai_config.supports_rag_enrichment:
+                    images = _selected_page_images(sources, catalog.document_map)
+                    if images:
+                        visual["page_images"] = images
+                raw_ans, cited = ai_config.explain(
+                    question, sources, answer_style=answer_style, context_question=prior_topic, **visual,
+                )
                 if not raw_ans:
                     response_status = "insufficient_evidence"
                     response_message = "AI chưa xác nhận đủ căn cứ cho toàn bộ câu hỏi. Các đoạn liên quan vẫn có ở dưới để bạn đối chiếu hoặc hỏi hẹp hơn."
@@ -579,13 +633,13 @@ class CourseManager:
                         context_question=context_question, message=response_message,
                         sources=[source_item(s) for s in sources],
                     )
-                cited_ids = {c.chunk_id for c in cited}
-                valid_ids = {s.chunk_id for s in sources}
-                if not cited_ids or not cited_ids <= valid_ids:
+                cited_ids = list(dict.fromkeys(c.chunk_id for c in cited))
+                evidence_by_id = {s.chunk_id: s for s in sources}
+                if not cited_ids or any(key not in evidence_by_id for key in cited_ids):
                     raise ValueError("Invalid answer citations")
                 ai_answer = raw_ans
                 mode = "ai"
-                cited_sources = [s for s in sources if s.chunk_id in cited_ids]
+                cited_sources = [evidence_by_id[key] for key in cited_ids]
             except (AIUnavailable, ValueError) as error:
                 reason = error.reason if isinstance(error, AIUnavailable) else "format"
                 is_local = (model_provider == "local") or getattr(ai_config, "is_local", False)
@@ -614,6 +668,10 @@ class CourseManager:
                         "quota": f"Tài khoản {provider_label} đang hết hạn mức (Quota exceeded) hoặc bị giới hạn số lượt gọi.",
                         "format": "AI trả phản hồi chưa đúng định dạng hoặc trích dẫn không hợp lệ.",
                         "network": f"Kết nối tới {provider_label} bị gián đoạn hoặc quá thời gian chờ.",
+                        "timeout": (
+                            f"{provider_label} chưa trả lời trong thời gian chờ. "
+                            "Bạn có thể thử lại hoặc chọn Gemini 3.5 Flash-Lite để phản hồi nhanh hơn."
+                        ),
                     }.get(reason, f"Dịch vụ {provider_label} tạm thời không phản hồi.")
                     response_status = "ai_unavailable"
                     response_message += " Bạn vẫn có thể xem các nguồn PDF đã tìm được bên dưới."
